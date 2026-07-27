@@ -1,0 +1,24 @@
+# Secrets — real values live here, never committed (see Secrets.example.xcconfig)
+Secrets.xcconfig
+Config/Secrets.xcconfig
+
+# Private keys (.p8 APNs / MusicKit auth keys) — NEVER commit. Live in secrets/.
+secrets/
+*.p8
+
+# Xcode / build
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+.swiftpm/
+.build/
+supabase/.temp/
+
+# NOTE: the generated *.xcodeproj IS committed on purpose. Xcode Cloud runs the
+# committed post-clone script to reconstruct Config/Secrets.xcconfig.
+# project.yml is the source of truth; regenerate the project with
+# `xcodegen generate` after adding files, then commit the result.
+# Package.resolved is also committed for reproducible dependency versions.
+.claude/worktrees/

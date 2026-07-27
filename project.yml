@@ -1,0 +1,110 @@
+# XcodeGen spec — the single source of truth for the Xcode project.
+# Regenerate the project after adding files or changing settings with:
+#   xcodegen generate
+# Source files are picked up by folder glob, so adding a .swift file under
+# Heartable/ + regenerating is all it takes (no manual .pbxproj editing, no merge
+# conflicts). No CocoaPods anywhere — dependencies are Swift Package Manager.
+name: Heartable
+options:
+  bundleIdPrefix: com.zlichtman
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: "28LJG7MXT3"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "42"
+    SWIFT_STRICT_CONCURRENCY: complete
+    ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: "2.5.1"
+
+targets:
+  Heartable:
+    type: application
+    platform: iOS
+    sources:
+      - path: Heartable
+    configFiles:
+      Debug: Config/Secrets.xcconfig
+      Release: Config/Secrets.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zlichtman.heartable
+        PRODUCT_NAME: Heartable
+        INFOPLIST_FILE: Heartable/Resources/Info.plist
+        INFOPLIST_KEY_NSCameraUsageDescription: "Heartable uses the camera when you choose to take a new profile photo."
+        CODE_SIGN_ENTITLEMENTS: Heartable/Resources/Heartable.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Compile every supported *.appiconset as an alternate app icon
+        # so setAlternateIconName(themeKey) can switch the home-screen icon. The
+        # catalog is the single source of truth (no loose-file CFBundleIcons).
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: "YES"
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: "NO"
+        ENABLE_PREVIEWS: "YES"
+    dependencies:
+      - package: Supabase
+        product: Supabase
+      - target: HeartableWidgetExtension
+        embed: true
+
+  HeartableWidgetExtension:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: HeartableWidget
+      - path: Heartable/Shared/HeartableWidgetSnapshot.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zlichtman.heartable.widget
+        PRODUCT_NAME: HeartableWidget
+        INFOPLIST_FILE: HeartableWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: HeartableWidget/HeartableWidget.entitlements
+        CODE_SIGN_STYLE: Automatic
+        APPLICATION_EXTENSION_API_ONLY: "YES"
+        SKIP_INSTALL: "YES"
+        TARGETED_DEVICE_FAMILY: "1"
+
+  HeartableTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: HeartableTests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zlichtman.heartable.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+        CODE_SIGN_STYLE: Automatic
+    dependencies:
+      - target: Heartable
+
+# A shared scheme committed to the repo is required by Xcode Cloud — without it
+# the workflow has nothing to build. Generated into
+# Heartable.xcodeproj/xcshareddata/xcschemes/Heartable.xcscheme.
+schemes:
+  Heartable:
+    build:
+      targets:
+        Heartable: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - HeartableTests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

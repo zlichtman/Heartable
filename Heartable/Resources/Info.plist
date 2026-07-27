@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>Heartable</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Heartable</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.zlichtman.heartable</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>heartable</string>
+			</array>
+		</dict>
+	</array>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LASTFM_API_KEY</key>
+	<string>$(LASTFM_API_KEY)</string>
+	<key>LASTFM_USER</key>
+	<string>$(LASTFM_USER)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<!-- Self-hosted servers (Jellyfin default port 8096, Plex direct) are
+		     plain http on the home LAN; this relaxes ATS for local hosts only. -->
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+	<key>NSAppleMusicUsageDescription</key>
+	<string>Heartable connects to Apple Music to show your library and play tracks alongside your other services.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Heartable uses the camera when you choose to take a new profile photo.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Heartable uses your contacts to show people you can invite. Contact details are not uploaded or matched to Heartable accounts.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Heartable connects to your Plex or Jellyfin server on your home network to read and stream your music.</string>
+	<key>SPOTIFY_CLIENT_ID</key>
+	<string>$(SPOTIFY_CLIENT_ID)</string>
+	<key>SUPABASE_ANON_KEY</key>
+	<string>$(SUPABASE_ANON_KEY)</string>
+	<key>SUPABASE_HOST</key>
+	<string>$(SUPABASE_HOST)</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>PlayfairDisplay_700Bold.ttf</string>
+		<string>DMSans_400Regular.ttf</string>
+		<string>DMSans_500Medium.ttf</string>
+		<string>DMSans_600SemiBold.ttf</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+</dict>
+</plist>
