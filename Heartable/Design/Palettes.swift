@@ -864,6 +864,84 @@ private let _rosegoldTheme = ThemeDef(
         )
     )
 
+/// Build new editorial presets through the same contrast-enforcing path as
+/// custom themes. This keeps every semantic color populated and prevents new
+/// gallery additions from introducing illegible text/background combinations.
+private func _editorialTheme(
+    key: String,
+    label: String,
+    group: ThemeGroup,
+    subtitle: String,
+    bg: UInt32,
+    surface: UInt32,
+    card: UInt32,
+    accent: UInt32,
+    accent2: UInt32,
+    text: UInt32
+) -> ThemeDef {
+    func color(_ hex: UInt32) -> RGBAColor {
+        RGBAColor(
+            r: Double((hex >> 16) & 0xff) / 255,
+            g: Double((hex >> 8) & 0xff) / 255,
+            b: Double(hex & 0xff) / 255
+        )
+    }
+
+    return ThemeDef(
+        key: key,
+        label: label,
+        group: group,
+        section: group.rawValue,
+        subtitle: subtitle,
+        logoColor: Color(hex: accent),
+        palette: PaletteBuilder.derive(
+            bg: color(bg),
+            surface: color(surface),
+            card: color(card),
+            accent: color(accent),
+            accent2: color(accent2),
+            text: color(text)
+        ),
+        curated: true,
+        curatedSection: group.rawValue
+    )
+}
+
+private let _archiveTheme = _editorialTheme(
+    key: "archive", label: "Archive", group: .light,
+    subtitle: "paper + walnut",
+    bg: 0xf2e9d8, surface: 0xe4d4bc, card: 0xfbf5e9,
+    accent: 0x995537, accent2: 0xc58a55, text: 0x342820
+)
+
+private let _alpineTheme = _editorialTheme(
+    key: "alpine", label: "Alpine", group: .light,
+    subtitle: "ice + mineral blue",
+    bg: 0xecf5f5, surface: 0xdceceb, card: 0xf8fcfb,
+    accent: 0x1d6d78, accent2: 0x6a7db8, text: 0x163437
+)
+
+private let _bordeauxTheme = _editorialTheme(
+    key: "bordeaux", label: "Bordeaux", group: .dark,
+    subtitle: "wine + rosewood",
+    bg: 0x160b11, surface: 0x2b1520, card: 0x211019,
+    accent: 0xb64670, accent2: 0xd28a68, text: 0xf8edf1
+)
+
+private let _juniperTheme = _editorialTheme(
+    key: "juniper", label: "Juniper", group: .dark,
+    subtitle: "evergreen + jade",
+    bg: 0x071713, surface: 0x102a21, card: 0x0c211a,
+    accent: 0x2d8a65, accent2: 0x7aaa68, text: 0xe9f6ef
+)
+
+private let _amberGlassTheme = _editorialTheme(
+    key: "amber-glass", label: "Amber Glass", group: .dark,
+    subtitle: "warm phosphor",
+    bg: 0x0b0905, surface: 0x211a0c, card: 0x171207,
+    accent: 0xa96908, accent2: 0x4b9e76, text: 0xf2e5c7
+)
+
 private let _classicTerminalTheme = ThemeDef(
     key: "classic-terminal", label: "Classic Terminal", group: .dark,
     section: "Dark", subtitle: "green phosphor", logoColor: Color(hex: 0x35f27a),
@@ -927,5 +1005,10 @@ let allThemeDefs: [ThemeDef] = [
     _synthwaveTheme,
     _vaporwaveTheme,
     _rosegoldTheme,
+    _archiveTheme,
+    _alpineTheme,
+    _bordeauxTheme,
+    _juniperTheme,
+    _amberGlassTheme,
     _classicTerminalTheme
 ]

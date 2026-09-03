@@ -33,6 +33,7 @@ final class ChatStore {
     private let api = BackendAPI.shared
     private var pollTask: Task<Void, Never>?
     private var sceneIsActive = true
+    private var lifecycleID = UUID()
 
     // MARK: - Conversation list
 
@@ -40,20 +41,27 @@ final class ChatStore {
     /// are sided correctly on first render.
     func resolveCurrentUserID() async -> UUID? {
         if let id = currentUserID { return id }
+        let requestID = lifecycleID
         let id = await api.currentUserID()
+        guard lifecycleID == requestID else { return nil }
         currentUserID = id
         return id
     }
 
     func loadConversations() async {
         guard !loadingConversations else { return }
+        let requestID = lifecycleID
         loadingConversations = true
-        defer { loadingConversations = false }
+        defer {
+            if lifecycleID == requestID { loadingConversations = false }
+        }
         do {
             let fetched = try await api.fetchConversations()
+            guard lifecycleID == requestID else { return }
             conversations = fetched
             conversationError = nil
         } catch {
+            guard lifecycleID == requestID else { return }
             // Preserve the last good list. A transient outage must never look like
             // the user suddenly lost every friend and conversation.
             conversationError = Self.message(for: error)
@@ -99,19 +107,22 @@ final class ChatStore {
     @discardableResult
     func refreshOpenThread() async -> Bool {
         guard let friend = openFriend else { return false }
+        let requestID = lifecycleID
         let previousCount = messages.count
         let previousLastID = messages.last?.id
         do {
             let fetched = try await api.fetchMessages(with: friend.userId)
             // Only replace if still on the same thread (avoids a late response
             // from a previous thread clobbering the current one).
-            guard openFriend?.userId == friend.userId else { return false }
+            guard lifecycleID == requestID,
+                  openFriend?.userId == friend.userId else { return false }
             messages = fetched
             loadingMessages = false
             threadError = nil
             return fetched.count != previousCount || fetched.last?.id != previousLastID
         } catch {
-            guard openFriend?.userId == friend.userId else { return false }
+            guard lifecycleID == requestID,
+                  openFriend?.userId == friend.userId else { return false }
             // Keep the last good messages visible while connectivity recovers.
             loadingMessages = false
             threadError = Self.message(for: error)
@@ -123,16 +134,19 @@ final class ChatStore {
     /// poll for one conversation from marking a newly-opened conversation.
     func markRead(friendID: UUID) async {
         guard sceneIsActive, openFriend?.userId == friendID else { return }
+        let requestID = lifecycleID
         do {
             try await api.markRead(with: friendID)
-            guard openFriend?.userId == friendID else { return }
+            guard lifecycleID == requestID,
+                  openFriend?.userId == friendID else { return }
             if let idx = conversations.firstIndex(
                 where: { $0.friend.userId == friendID }
             ) {
                 conversations[idx].unreadCount = 0
             }
         } catch {
-            guard openFriend?.userId == friendID else { return }
+            guard lifecycleID == requestID,
+                  openFriend?.userId == friendID else { return }
             threadError = Self.message(for: error)
         }
     }
@@ -166,14 +180,18 @@ final class ChatStore {
         payload: MessagePayload?
     ) async -> Bool {
         guard let friend = openFriend, !sending else { return false }
+        let requestID = lifecycleID
         sending = true
-        defer { sending = false }
+        defer {
+            if lifecycleID == requestID { sending = false }
+        }
         do {
             guard let inserted = try await api.sendMessage(
                 to: friend.userId, body: body, kind: kind, payload: payload
             ) else {
                 throw MessagingError.missingInsertedMessage
             }
+            guard lifecycleID == requestID else { return false }
             if openFriend?.userId == friend.userId,
                !messages.contains(where: { $0.id == inserted.id }) {
                 messages.append(inserted)
@@ -182,7 +200,8 @@ final class ChatStore {
             upsertConversation(friend: friend, lastMessage: inserted)
             return true
         } catch {
-            guard openFriend?.userId == friend.userId else { return false }
+            guard lifecycleID == requestID,
+                  openFriend?.userId == friend.userId else { return false }
             threadError = Self.message(for: error)
             return false
         }
@@ -195,6 +214,7 @@ final class ChatStore {
     /// Clear all account-owned state and stop outstanding work before another
     /// signed-in account can mount the app shell.
     func reset() {
+        lifecycleID = UUID()
         pollTask?.cancel()
         pollTask = nil
         conversations = []
@@ -213,10 +233,12 @@ final class ChatStore {
 
     private func startPolling(friendID: UUID) {
         pollTask?.cancel()
+        let requestID = lifecycleID
         pollTask = Task { [weak self] in
             guard let self else { return }
             await self.refreshOpenThread()
             guard !Task.isCancelled,
+                  self.lifecycleID == requestID,
                   self.sceneIsActive,
                   self.openFriend?.userId == friendID else { return }
             await self.markRead(friendID: friendID)
@@ -226,6 +248,7 @@ final class ChatStore {
                 guard self.sceneIsActive, self.openFriend?.userId == friendID else { break }
                 let changed = await self.refreshOpenThread()
                 guard !Task.isCancelled,
+                      self.lifecycleID == requestID,
                       self.sceneIsActive,
                       self.openFriend?.userId == friendID else { break }
                 if changed { await self.markRead(friendID: friendID) }

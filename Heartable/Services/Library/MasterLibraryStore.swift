@@ -46,6 +46,7 @@ final class MasterLibraryStore {
     // MARK: - Internals
 
     private var didHydrate = false
+    private var hydratedOwnerID: UUID?
     private var lifecycleID = UUID()
     private var didDeepIndex = false
     private var loadedProviders: Set<ProviderID> = []
@@ -62,13 +63,18 @@ final class MasterLibraryStore {
 
     /// Load the persisted snapshot once per session (decoded off the main actor).
     func hydrate() async {
-        guard !didHydrate else { return }
+        guard let ownerID = AccountSessionStore.currentOwnerID else { return }
+        guard !didHydrate || hydratedOwnerID != ownerID else { return }
         didHydrate = true
+        hydratedOwnerID = ownerID
         let requestID = lifecycleID
         let snapshot = await Task.detached(priority: .userInitiated) {
-            MasterLibrarySnapshot.load()
+            MasterLibrarySnapshot.load(ownerID: ownerID)
         }.value
-        guard lifecycleID == requestID, let snapshot, tracks.isEmpty else { return }
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID,
+              let snapshot,
+              tracks.isEmpty else { return }
         let hydratedArtists = if snapshot.artists.isEmpty {
             await Task.detached(priority: .userInitiated) {
                 MasterArtist.aggregate(snapshot.tracks)
@@ -76,7 +82,8 @@ final class MasterLibraryStore {
         } else {
             snapshot.artists
         }
-        guard lifecycleID == requestID else { return }
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
         tracks = snapshot.tracks
         artists = hydratedArtists
         lastLoadedAt = snapshot.savedAt
@@ -89,9 +96,12 @@ final class MasterLibraryStore {
     /// fresh, the connected set is unchanged, and we already have data (unless
     /// `force`, e.g. pull-to-refresh or a connect/disconnect).
     func load(force: Bool = false) async {
+        guard let ownerID = AccountSessionStore.currentOwnerID else { return }
         let requestID = lifecycleID
         await hydrate()
-        guard lifecycleID == requestID else { return }
+        guard lifecycleID == requestID,
+              hydratedOwnerID == ownerID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
 
         let providers = await ProviderRegistry.connected()
         let liveIDs = Set(providers.map(\.id))
@@ -111,7 +121,8 @@ final class MasterLibraryStore {
         async let topFetch = Self.gather(providers) { await $0.topTracks(range: .mediumTerm, limit: 50) }
         async let likedFetch = Self.gather(providers) { await $0.likedTracks(limit: 10_000) }
         let fetched = await topFetch + likedFetch
-        guard lifecycleID == requestID else { return }
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
 
         loading = false
         let cachedTracks = tracks
@@ -122,7 +133,8 @@ final class MasterLibraryStore {
                 cachedTracks: cachedTracks
             )
         }.value
-        guard lifecycleID == requestID else { return }
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
         tracks = projection.tracks
         artists = projection.artists
         loadedProviders = liveIDs
@@ -135,9 +147,12 @@ final class MasterLibraryStore {
     /// to every provider; this makes the browse pipeline authoritative and keeps
     /// the master projection as a cheap in-memory reconciliation.
     func adopt(_ sourceTracks: [UnifiedTrack], providerIDs: Set<ProviderID>) async {
+        guard let ownerID = AccountSessionStore.currentOwnerID else { return }
         let requestID = lifecycleID
         await hydrate()
-        guard lifecycleID == requestID else { return }
+        guard lifecycleID == requestID,
+              hydratedOwnerID == ownerID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
         if providerIDs != loadedProviders { didDeepIndex = false }
         let cachedTracks = tracks
         let projection = await Task.detached(priority: .userInitiated) {
@@ -147,7 +162,8 @@ final class MasterLibraryStore {
                 cachedTracks: cachedTracks
             )
         }.value
-        guard lifecycleID == requestID else { return }
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
         tracks = projection.tracks
         artists = projection.artists
         loadedProviders = providerIDs
@@ -160,6 +176,8 @@ final class MasterLibraryStore {
     /// never drops sources, and re-runs after a provider set change. Mixtapes are
     /// skipped (their tracks already reference underlying provider tracks).
     func deepIndex(playlists: [UnifiedPlaylist]) async {
+        guard let ownerID = AccountSessionStore.currentOwnerID,
+              hydratedOwnerID == ownerID else { return }
         let requestID = lifecycleID
         guard !didDeepIndex else { return }
         let providerPlaylists = playlists.filter { !$0.isMixtape }
@@ -167,12 +185,14 @@ final class MasterLibraryStore {
         didDeepIndex = true
 
         let fetched = await Self.gatherPlaylistTracks(providerPlaylists, maxConcurrent: 6)
-        guard lifecycleID == requestID else { return }
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
         let cachedTracks = tracks
         let projection = await Task.detached(priority: .userInitiated) {
             Self.deepProjection(cachedTracks: cachedTracks, fetched: fetched)
         }.value
-        guard lifecycleID == requestID else { return }
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
         tracks = projection.tracks
         artists = projection.artists
         persist()
@@ -248,8 +268,10 @@ final class MasterLibraryStore {
     }
 
     private func persist() {
+        guard let ownerID = hydratedOwnerID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
         let snapshot = MasterLibrarySnapshot(tracks: tracks, artists: artists)
-        Task.detached(priority: .utility) { snapshot.save() }
+        Task.detached(priority: .utility) { snapshot.save(ownerID: ownerID) }
     }
 
     // MARK: - Federated search
@@ -577,6 +599,7 @@ final class MasterLibraryStore {
         lastLoadedAt = nil
         didDeepIndex = false
         didHydrate = false
+        hydratedOwnerID = nil
         searchedWithNoProviders = false
     }
 }

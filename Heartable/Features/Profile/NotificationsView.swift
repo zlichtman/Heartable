@@ -5,17 +5,15 @@ import UIKit
 /// Notification preferences, wired the standard way: the master row requests the
 /// real iOS notification permission, reflects the system authorization status, and
 /// deep-links to Settings when notifications are turned off there. The per-category
-/// toggles persist to `@AppStorage` and gate which notifications fire once the push
-/// pipeline (APNs + Supabase triggers) is connected.
+/// toggles persist to `@AppStorage` and gate the notification categories that are
+/// implemented in the current build. Future remote-push categories stay hidden
+/// until an APNs pipeline exists, so the settings never promise a dead control.
 struct NotificationsView: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(BannerCenter.self) private var banners
     @Environment(\.scenePhase) private var scenePhase
 
     @AppStorage("heartable.notifications.allow") private var allow = true
-    @AppStorage("heartable.notifications.friendRequests") private var friendRequests = true
-    @AppStorage("heartable.notifications.friendNowPlaying") private var friendNowPlaying = false
-    @AppStorage("heartable.notifications.mixtapeShares") private var mixtapeShares = true
     @AppStorage("heartable.notifications.weeklyLeaderboard") private var weeklyLeaderboard = true
     @AppStorage("heartable.notifications.backupComplete") private var backupComplete = true
 
@@ -24,25 +22,16 @@ struct NotificationsView: View {
 
     /// Categories are live only when the OS has granted permission and the user
     /// hasn't muted everything locally.
-    private var enabled: Bool { status == .authorized && allow }
+    private var enabled: Bool {
+        switch status {
+        case .authorized, .provisional, .ephemeral: allow
+        default: false
+        }
+    }
 
     var body: some View {
         SettingsScaffold(title: "Notifications") {
             card { permissionRow }
-
-            sectionHeader("Social")
-            card {
-                VStack(spacing: 0) {
-                    toggleRow(icon: "person.badge.plus", label: "Friend requests",
-                              isOn: $friendRequests, disabled: !enabled)
-                    divider
-                    toggleRow(icon: "waveform", label: "Friend now-playing",
-                              subtitle: "Quiet by default", isOn: $friendNowPlaying, disabled: !enabled)
-                    divider
-                    toggleRow(icon: "heart.fill", label: "Mixtape shares",
-                              isOn: $mixtapeShares, disabled: !enabled)
-                }
-            }
 
             sectionHeader("Gamification")
             card {
@@ -77,8 +66,24 @@ struct NotificationsView: View {
     @ViewBuilder
     private var permissionRow: some View {
         switch status {
-        case .authorized, .provisional, .ephemeral:
+        case .authorized, .ephemeral:
             toggleRow(icon: "bell.fill", label: "Allow notifications", isOn: $allow)
+        case .provisional:
+            VStack(spacing: 0) {
+                toggleRow(icon: "bell.fill", label: "Allow notifications", isOn: $allow)
+                divider
+                Button { Task { await request() } } label: {
+                    actionRow(
+                        icon: "bell.badge.fill",
+                        label: "Notifications are quiet",
+                        subtitle: "Allow banners and sounds in iOS",
+                        trailing: requesting ? nil : "Turn On",
+                        showSpinner: requesting
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(requesting)
+            }
         case .denied:
             Button { openSystemSettings() } label: {
                 actionRow(icon: "bell.slash.fill",
@@ -102,8 +107,10 @@ struct NotificationsView: View {
 
     private var footerText: String {
         switch status {
-        case .authorized, .provisional, .ephemeral:
-            return "The weekly leaderboard digest and backup-complete alerts are delivered now. Friend requests, friend now-playing, and mixtape shares are coming with push support."
+        case .authorized, .ephemeral:
+            return "Heartable can notify you about completed backups and your weekly leaderboard."
+        case .provisional:
+            return "Heartable notifications currently arrive quietly. Turn on banners and sounds above if you want immediate alerts."
         case .denied:
             return "Notifications are turned off for Heartable in iOS Settings."
         default:

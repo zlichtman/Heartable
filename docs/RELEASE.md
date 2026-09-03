@@ -26,7 +26,8 @@ builds instead of replacing the record.
 1. Confirm `main` is clean.
 2. Increment `CURRENT_PROJECT_VERSION` in `project.yml`.
 3. Run `xcodegen generate`.
-4. Lint plists and entitlements.
+4. Run `ci_scripts/validate_release_identity.sh`; it lints plist,
+   entitlement, and privacy-manifest contracts and rejects private material.
 5. Run the full unit-test suite.
 6. Build a generic Simulator Release configuration.
 7. Review `git diff --check`.
@@ -47,8 +48,9 @@ migration versions align afterward.
 ## 3. Apple configuration
 
 The app and widget must both have App Groups enabled and assigned to
-`group.com.zlichtman.heartable`. The main app also retains Sign in with
-Apple and MusicKit.
+`group.com.zlichtman.heartable`. The main app also retains Sign in with Apple.
+Enable MusicKit for `com.zlichtman.heartable` under the App ID's **App Services**
+tab; current MusicKit for Swift does not add a code-signing entitlement.
 Use automatic signing.
 
 Xcode-managed certificates are team-wide. Do not revoke a certificate merely
@@ -96,6 +98,9 @@ After the archive succeeds:
 5. Add external-test information and a reviewer account.
 6. Submit the build for Beta App Review.
 7. Enable the public TestFlight link only after approval.
+
+Use [PUBLIC_BETA.md](PUBLIC_BETA.md) as the acceptance checklist. A build that
+passes CI but still has an unchecked release gate is not public-beta ready.
 
 Never call an internal-only build “public.”
 

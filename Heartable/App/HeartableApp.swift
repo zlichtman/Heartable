@@ -93,14 +93,16 @@ struct HeartableApp: App {
                 .environment(weeklyRecap)
                 .onOpenURL { friendLinks.handle($0) }
                 .task {
-                    // Reconcile the weekly local-notification digest with the saved
-                    // prefs, and run a scheduled backup if one is due on this launch.
+                    // Reconcile the weekly local-notification digest. Initial
+                    // backup scheduling is account-bootstrap work owned by RootView.
                     LocalNotifier.syncScheduledFromPrefs()
-                    await backupScheduler.runIfDue()
                 }
                 .onChange(of: scenePhase) { _, phase in
-                    if phase == .active {
-                        Task { await backupScheduler.runIfDue() }
+                    if phase == .active,
+                       auth.loaded,
+                       let userID = auth.userID,
+                       AccountSessionStore.currentOwnerID == userID {
+                        Task { await backupScheduler.runIfDue(userID: userID) }
                     }
                 }
         }

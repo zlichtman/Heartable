@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		01E495E9EA50BDAFE67A58B8 /* JellyfinConnectSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49DF3EAF177F0F77DA09D5C9 /* JellyfinConnectSheet.swift */; };
+		0365DEBC37BC5B8DF4901289 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = D3B47440F0FD6BC9A18297AE /* PrivacyInfo.xcprivacy */; };
 		0518AB9F7C1C10CA05195934 /* ListenBrainzProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4A45E6AB847482D6E28920 /* ListenBrainzProvider.swift */; };
 		053FB167F085E6605E4CE7B5 /* MasterArtist.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4977FEC19EAE8CEB78F7D104 /* MasterArtist.swift */; };
 		05A2B611E153F9972D6994E6 /* AppIconCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDD2E9B5CF8F1321485133D1 /* AppIconCatalogTests.swift */; };
@@ -69,6 +70,7 @@
 		679E3AC18DFB812BD67945AE /* ProfileCurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01EA2C32465E82CF45ADA916 /* ProfileCurationTests.swift */; };
 		68A92E23B239BF11BED66A15 /* Palettes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F7F60B39CCF84A197F21A4C /* Palettes.swift */; };
 		6951C649D21406A792503BE5 /* AuthStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58A9050EE987CC3EEEACBB61 /* AuthStore.swift */; };
+		6AB0E149EB807FAC23646DAD /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = E3BF81B0E592ED2EE943BCBE /* PrivacyInfo.xcprivacy */; };
 		6E3752B6E14F08EDD8948EE3 /* AppleSignIn.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC8325D978BE1ABA4652BC87 /* AppleSignIn.swift */; };
 		6EB73DC6FACF564CE4EF1103 /* Keychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 853B45F9DA4C5E40AB1B57FF /* Keychain.swift */; };
 		6F4F970877BAB30617574DDD /* ThemesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2E22A70EE59D5D3B1793B0D /* ThemesView.swift */; };
@@ -144,7 +146,6 @@
 		DD28BF377E3D37ACFCA3D934 /* SpotifyAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 866DA611D817C68C16B6C67C /* SpotifyAuth.swift */; };
 		DD87CBDE7A73DF1268F03B88 /* ShuffleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B2FAA11D1E98A0452B45E0B /* ShuffleTests.swift */; };
 		DF4F5D27AD04A5AFA8CD37B7 /* FriendProfileMusicConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75CDE8C04C5C48C66122D9C9 /* FriendProfileMusicConnectionTests.swift */; };
-		E4A0E23880DC82DBB32B24AD /* HeartableLaunchAnimation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CD0972B6647769C47F98372 /* HeartableLaunchAnimation.swift */; };
 		E6E1B80C79F56EEC2A0F345F /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6F1F99D53322E4D1E614A21 /* AuthView.swift */; };
 		E7B99FD2881182A55A9174C7 /* FriendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07B3EE83A230D46F528F71E2 /* FriendsView.swift */; };
 		E7E491DCEA5A53C7DE7EBD9F /* PlayerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 509CC4B28E5CB7C7591AB61A /* PlayerStore.swift */; };
@@ -293,7 +294,6 @@
 		853B45F9DA4C5E40AB1B57FF /* Keychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Keychain.swift; sourceTree = "<group>"; };
 		866DA611D817C68C16B6C67C /* SpotifyAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAuth.swift; sourceTree = "<group>"; };
 		8A8574247765DE908848422A /* BannerCenter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BannerCenter.swift; sourceTree = "<group>"; };
-		8CD0972B6647769C47F98372 /* HeartableLaunchAnimation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartableLaunchAnimation.swift; sourceTree = "<group>"; };
 		8DC387AE36BA4CDA07ECB2C9 /* PlexProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlexProvider.swift; sourceTree = "<group>"; };
 		916983D85EC6CB7AAF800F13 /* MiniPlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MiniPlayer.swift; sourceTree = "<group>"; };
 		92DC0B8A30E1B28FA284F037 /* EditProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditProfileView.swift; sourceTree = "<group>"; };
@@ -340,6 +340,7 @@
 		CF792154BF3CEE3CC5048C55 /* HeartableApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartableApp.swift; sourceTree = "<group>"; };
 		D24DC5B96BF927808116BD55 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		D30B10C1B4D5A472CCAD2468 /* WeeklyRecapArchiveStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyRecapArchiveStore.swift; sourceTree = "<group>"; };
+		D3B47440F0FD6BC9A18297AE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		DA50620D1268B1276A4F5E68 /* MixcloudProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixcloudProvider.swift; sourceTree = "<group>"; };
 		DB527D97A87DE283A588B7F6 /* UnifiedTrackRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedTrackRow.swift; sourceTree = "<group>"; };
 		DCEAA013199521B953D28F73 /* ProviderID.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderID.swift; sourceTree = "<group>"; };
@@ -348,6 +349,7 @@
 		E06E89CF2BE95B97581062CA /* AddFriendView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddFriendView.swift; sourceTree = "<group>"; };
 		E1EE2AEA01589A6BA456BCBF /* LibrarySortStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySortStore.swift; sourceTree = "<group>"; };
 		E2D6460F21A204D605CC5247 /* SpotifyAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyAPI.swift; sourceTree = "<group>"; };
+		E3BF81B0E592ED2EE943BCBE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		E673B2646B4446139B6ABF96 /* DMSans_600SemiBold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = DMSans_600SemiBold.ttf; sourceTree = "<group>"; };
 		E6F1F99D53322E4D1E614A21 /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		E76F95A1C675235EC72E70FA /* PlaybackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackEngine.swift; sourceTree = "<group>"; };
@@ -429,6 +431,7 @@
 				9E157AECA964222D618C67E9 /* Assets.xcassets */,
 				4BB415FE33F7CC9DC5B8C3F4 /* Heartable.entitlements */,
 				50DCC752A4C58D1501FADA84 /* Info.plist */,
+				D3B47440F0FD6BC9A18297AE /* PrivacyInfo.xcprivacy */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -776,7 +779,6 @@
 				84825AD1F9B633A66953DE81 /* ArtistAvatar.swift */,
 				8A8574247765DE908848422A /* BannerCenter.swift */,
 				6CE1C2096EE1FC7E4F4EEFEC /* CoverArt.swift */,
-				8CD0972B6647769C47F98372 /* HeartableLaunchAnimation.swift */,
 				C866F5A71F2D23706D6EB9F7 /* HeartableModalComponents.swift */,
 				F53493A79902C6A6A2B61A9C /* HeartableNavigationButton.swift */,
 				3F883CEFDBB5D21AEB434768 /* NowPlayingStrip.swift */,
@@ -797,6 +799,7 @@
 				0362F889C4DD297F5DE85239 /* HeartableWidgetBundle.swift */,
 				EDE248D3E1AE5040E62E980F /* HeartableWidgets.swift */,
 				7897A1613385DF9CC12D5065 /* Info.plist */,
+				E3BF81B0E592ED2EE943BCBE /* PrivacyInfo.xcprivacy */,
 			);
 			path = HeartableWidget;
 			sourceTree = "<group>";
@@ -845,6 +848,7 @@
 			buildConfigurationList = 17575C489C0A358A63ADE376 /* Build configuration list for PBXNativeTarget "HeartableWidgetExtension" */;
 			buildPhases = (
 				6490459B4209D5E822942125 /* Sources */,
+				2E3A61A339A9852E5719CFCD /* Resources */,
 			);
 			buildRules = (
 			);
@@ -923,6 +927,14 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		2E3A61A339A9852E5719CFCD /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6AB0E149EB807FAC23646DAD /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		C91FAFCD4DB245547A4D21B9 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -932,6 +944,7 @@
 				976AF94DDA1E7D2A9F760977 /* DMSans_500Medium.ttf in Resources */,
 				5D239FAD7B8BB9ED0F3F420E /* DMSans_600SemiBold.ttf in Resources */,
 				C89FC35E4D300A9490783FFC /* PlayfairDisplay_700Bold.ttf in Resources */,
+				0365DEBC37BC5B8DF4901289 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1018,7 +1031,6 @@
 				89AF96E1F3E47E80722E9F07 /* FullPlayerView.swift in Sources */,
 				62180DB70D2019511D43DDC5 /* HTTPClient.swift in Sources */,
 				70EE545304BE10A98D6F8705 /* HeartableApp.swift in Sources */,
-				E4A0E23880DC82DBB32B24AD /* HeartableLaunchAnimation.swift in Sources */,
 				65023DB52E031C698B55C90F /* HeartableModalComponents.swift in Sources */,
 				C61A48B90CB8F715ADE0EAA4 /* HeartableNavigationButton.swift in Sources */,
 				C2CD21FE07328ED0571E364F /* HeartableWidgetSnapshot.swift in Sources */,
@@ -1200,7 +1212,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 44;
+				CURRENT_PROJECT_VERSION = 45;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 28LJG7MXT3;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -1324,7 +1336,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 44;
+				CURRENT_PROJECT_VERSION = 45;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 28LJG7MXT3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -1429,8 +1441,8 @@
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/supabase/supabase-swift";
 			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.5.1;
+				kind = exactVersion;
+				version = 2.46.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

@@ -131,6 +131,7 @@ final class PlayerStore {
     private var playbackStartTask: Task<Void, Never>?
     private var pendingStartTrack: UnifiedTrack?
     private var pendingStartExpiresAt: Date?
+    private var lifecycleID = UUID()
 
     func start() {
         guard pollTask == nil else { return }
@@ -147,6 +148,7 @@ final class PlayerStore {
     /// Stop polling and forget the now-playing track + recency state (call on
     /// sign-out / delete / account switch so the mini-player doesn't linger).
     func reset() {
+        lifecycleID = UUID()
         stop()
         now = nil
         lastConfirmedNow = nil
@@ -171,6 +173,7 @@ final class PlayerStore {
     /// to catch a takeover) — never every cycle when another source is in control.
     @discardableResult
     func refresh() async -> Double {
+        let requestID = lifecycleID
         tick &+= 1
         var candidates: [Now] = []
         let previousNow = now
@@ -192,7 +195,10 @@ final class PlayerStore {
         // not disappear. Only Spotify's authoritative idle response clears it.
         if shouldPollSpotify() {
             if let token = await SpotifyAuth.getValidAccessToken() {
-                switch await SpotifyAPI.pollPlayback(token: token) {
+                guard lifecycleID == requestID else { return 8 }
+                let playback = await SpotifyAPI.pollPlayback(token: token)
+                guard lifecycleID == requestID else { return 8 }
+                switch playback {
                 case .rateLimited(let retry):
                     let until = Date().addingTimeInterval(max(retry, 3))
                     spotifyBackoffUntil = until
@@ -226,6 +232,7 @@ final class PlayerStore {
                     retainPreviousSpotify(previousNow, in: &candidates)
                 }
             } else if SpotifyAuth.isSignedIn {
+                guard lifecycleID == requestID else { return 8 }
                 retainPreviousSpotify(previousNow, in: &candidates)
             } else {
                 spotifyFailureRetention.reset()
@@ -237,6 +244,7 @@ final class PlayerStore {
             spotifyBackoffUntil = nil
             spotifyFailureRetention.reset()
         }
+        guard lifecycleID == requestID else { return 8 }
 
         // Apple Music (MusicKit). Best-effort read of the application player.
         if MusicAuthorization.currentStatus == .authorized,
@@ -299,6 +307,7 @@ final class PlayerStore {
         let selected = pool.max {
             (changedAt[$0.source] ?? .distantPast) < (changedAt[$1.source] ?? .distantPast)
         }
+        guard lifecycleID == requestID else { return 8 }
         now = selected
         if let selected,
            observedCandidates.contains(selected) {

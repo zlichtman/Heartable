@@ -20,12 +20,13 @@ final class AuthStore {
         self.client = client
         // The stream emits `.initialSession` immediately, so `loaded` flips on
         // first tick (after the client restores any persisted session).
-        observeTask = Task { [weak self] in
-            guard let self else { return }
+        observeTask = Task { [weak self, client] in
             for await state in client.auth.authStateChanges {
+                guard !Task.isCancelled else { return }
                 // Activate only this Heartable account's provider namespace before
                 // publishing the session to the UI.
                 await AccountSessionStore.prepare(for: state.session?.user.id)
+                guard !Task.isCancelled, let self else { return }
                 self.session = state.session
                 self.loaded = true
             }

@@ -53,12 +53,16 @@ final class PlaylistTracksRepository {
         }
     }
 
-    private static var cacheURL: URL? {
+    private static func cacheURL(ownerID: UUID) -> URL? {
         FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
             .appendingPathComponent("Heartable", isDirectory: true)
             .appendingPathComponent(
-                AccountSessionStore.scopedFilename("playlist-tracks", ext: "json")
+                AccountSessionStore.scopedFilename(
+                    "playlist-tracks",
+                    ext: "json",
+                    ownerID: ownerID
+                )
             )
     }
 
@@ -66,6 +70,8 @@ final class PlaylistTracksRepository {
     private var inFlight: [String: Task<[UnifiedTrack], Never>] = [:]
     private var lifecycleID = UUID()
     private var didHydrate = false
+    private var hydratedOwnerID: UUID?
+    private var hydrationTask: Task<Snapshot?, Never>?
     private let cacheIO = CacheIO()
 
     private(set) var loadingKeys: Set<String> = []
@@ -84,10 +90,26 @@ final class PlaylistTracksRepository {
     nonisolated static let versionedSafetyWindow: TimeInterval = 7 * 24 * 60 * 60
 
     func hydrate() async {
-        guard !didHydrate else { return }
+        guard let ownerID = AccountSessionStore.currentOwnerID else { return }
+        if didHydrate, hydratedOwnerID == ownerID { return }
+        let requestID = lifecycleID
+
+        let task: Task<Snapshot?, Never>
+        if let hydrationTask {
+            task = hydrationTask
+        } else {
+            let io = cacheIO
+            let url = Self.cacheURL(ownerID: ownerID)
+            task = Task { await io.load(from: url) }
+            hydrationTask = task
+        }
+        let snapshot = await task.value
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
+        entries = snapshot?.entries ?? [:]
         didHydrate = true
-        guard let snapshot = await cacheIO.load(from: Self.cacheURL) else { return }
-        entries = snapshot.entries
+        hydratedOwnerID = ownerID
+        hydrationTask = nil
     }
 
     func tracks(for playlist: UnifiedPlaylist) -> [UnifiedTrack] {
@@ -249,6 +271,7 @@ final class PlaylistTracksRepository {
 
     func reset() {
         lifecycleID = UUID()
+        hydrationTask?.cancel()
         for task in inFlight.values { task.cancel() }
         entries = [:]
         inFlight = [:]
@@ -259,6 +282,8 @@ final class PlaylistTracksRepository {
         completedSyncCount = 0
         totalSyncCount = 0
         didHydrate = false
+        hydratedOwnerID = nil
+        hydrationTask = nil
     }
 
     private func beginFetch(_ playlist: UnifiedPlaylist) -> Task<[UnifiedTrack], Never> {
@@ -321,7 +346,12 @@ final class PlaylistTracksRepository {
     }
 
     private func persist() async {
-        await cacheIO.save(Snapshot(entries: entries), to: Self.cacheURL)
+        guard let ownerID = hydratedOwnerID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
+        await cacheIO.save(
+            Snapshot(entries: entries),
+            to: Self.cacheURL(ownerID: ownerID)
+        )
     }
 
     private nonisolated static func fetchTracks(

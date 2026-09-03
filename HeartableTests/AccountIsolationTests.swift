@@ -87,6 +87,32 @@ final class AccountIsolationTests: XCTestCase {
         )
     }
 
+    func testMasterLibrarySnapshotReadsOnlyTheExplicitAccountFile() {
+        let first = UUID()
+        let second = UUID()
+        let snapshot = MasterLibrarySnapshot(tracks: [], artists: [])
+        snapshot.save(ownerID: first)
+
+        defer {
+            let directory = FileManager.default
+                .urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
+                .appendingPathComponent("Heartable", isDirectory: true)
+            for ownerID in [first, second] {
+                let name = AccountSessionStore.scopedFilename(
+                    "master-library",
+                    ext: "json",
+                    ownerID: ownerID
+                )
+                if let url = directory?.appendingPathComponent(name) {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
+        }
+
+        XCTAssertNotNil(MasterLibrarySnapshot.load(ownerID: first))
+        XCTAssertNil(MasterLibrarySnapshot.load(ownerID: second))
+    }
+
     func testProviderKeysAreScopedToHeartableAccount() {
         let first = UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!
         let second = UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!

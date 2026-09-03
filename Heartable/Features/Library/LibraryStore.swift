@@ -75,14 +75,19 @@ final class LibraryStore {
         }
     }
 
-    private static var cacheURL: URL? {
+    private static func cacheURL(ownerID: UUID) -> URL? {
         FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
             .appendingPathComponent(
-                AccountSessionStore.scopedFilename("heartable-library-cache", ext: "json")
+                AccountSessionStore.scopedFilename(
+                    "heartable-library-cache",
+                    ext: "json",
+                    ownerID: ownerID
+                )
             )
     }
 
     private var didHydrate = false
+    private var hydratedOwnerID: UUID?
     private var lifecycleID = UUID()
     private var cachedAt: Date?
     private var loadedProviders: Set<ProviderID>?
@@ -93,12 +98,15 @@ final class LibraryStore {
     /// Hydrate independently of a provider refresh so views can render cached
     /// content while the app is still resolving which services are connected.
     func hydrate() async {
-        guard !didHydrate else { return }
+        guard let ownerID = AccountSessionStore.currentOwnerID else { return }
+        guard !didHydrate || hydratedOwnerID != ownerID else { return }
         didHydrate = true
+        hydratedOwnerID = ownerID
         let requestID = lifecycleID
         async let cachedImageLookup = ArtworkDiskCache.shared.artistImageURLs()
-        guard let cache = await cacheIO.load(from: Self.cacheURL),
-              lifecycleID == requestID else { return }
+        guard let cache = await cacheIO.load(from: Self.cacheURL(ownerID: ownerID)),
+              lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
 
         // Publish the useful Home payload before doing any artist aggregation.
         // This is the important latency boundary: playlist tiles and liked songs
@@ -111,13 +119,15 @@ final class LibraryStore {
         warmVisibleArtwork()
 
         let images = await cachedImageLookup
-        guard lifecycleID == requestID else { return }
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
         artistImageCache = images
         let cachedImages = artistImageCache
         let cachedArtists = await Task.detached(priority: .userInitiated) {
             Self.aggregateArtists(cache.top + cache.liked, cachedImages: cachedImages)
         }.value
-        guard lifecycleID == requestID else { return }
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
         artists = cachedArtists
     }
 
@@ -129,9 +139,12 @@ final class LibraryStore {
     /// Refresh using the already-probed provider list from `ProvidersStore`.
     /// This avoids probing every adapter a second time merely to start a load.
     func loadAll(providers: [MusicProvider], force: Bool = false) async {
+        guard let ownerID = AccountSessionStore.currentOwnerID else { return }
         let requestID = lifecycleID
         await hydrate()
-        guard lifecycleID == requestID else { return }
+        guard lifecycleID == requestID,
+              hydratedOwnerID == ownerID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
 
         let providerIDs = Set(providers.map(\.id))
         if !force,
@@ -161,7 +174,8 @@ final class LibraryStore {
         let mixtapeList = await tapes
         let mixtapes = (mixtapeList.mine + mixtapeList.shared).map(Self.mapMixtape)
         let freshProviderPlaylists = await pls
-        guard lifecycleID == requestID else { return }
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
 
         // Non-empty wins: never overwrite good cached data with an empty result
         // (an empty fetch almost always means a transient token/network failure,
@@ -200,7 +214,8 @@ final class LibraryStore {
         artists = await Task.detached(priority: .userInitiated) {
             Self.aggregateArtists(refreshedTracks, cachedImages: cachedImages)
         }.value
-        guard lifecycleID == requestID else { return }
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
         // The playlist catalog may carry new content revisions or track counts.
         // The shared repository reconciles those immediately after this metadata
         // pass and then rebuilds the artist projection.
@@ -208,7 +223,7 @@ final class LibraryStore {
         libraryTracks = []
         cachedAt = Date()
         loadedProviders = providerIDs
-        await saveCache(providerIDs: providerIDs)
+        await saveCache(providerIDs: providerIDs, ownerID: ownerID)
         warmVisibleArtwork()
     }
 
@@ -295,6 +310,7 @@ final class LibraryStore {
         indexingArtists = false
         didBuildArtistIndex = false
         didHydrate = false
+        hydratedOwnerID = nil
         cachedAt = nil
         loadedProviders = nil
         artistImageCache = [:]
@@ -317,7 +333,9 @@ final class LibraryStore {
         didBuildArtistIndex = repository.hasResolvedAll(playlists)
     }
 
-    private func saveCache(providerIDs: Set<ProviderID>) async {
+    private func saveCache(providerIDs: Set<ProviderID>, ownerID: UUID) async {
+        guard hydratedOwnerID == ownerID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
         let snap = CacheSnapshot(
             top: topTracks,
             liked: likedTracks,
@@ -325,7 +343,7 @@ final class LibraryStore {
             savedAt: cachedAt ?? Date(),
             providerIDs: providerIDs
         )
-        await cacheIO.save(snap, to: Self.cacheURL)
+        await cacheIO.save(snap, to: Self.cacheURL(ownerID: ownerID))
     }
 
     /// ISO-8601 timestamps from Postgres, with and without fractional seconds.

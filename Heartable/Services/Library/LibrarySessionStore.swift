@@ -22,6 +22,7 @@ final class LibrarySessionStore {
     private var preparationTask: Task<Void, Never>?
     private var synchronizationTask: Task<Void, Never>?
     private var synchronizationID: UUID?
+    private var synchronizationProviderIDs: Set<ProviderID> = []
 
     init(
         library: LibraryStore = LibraryStore(),
@@ -71,17 +72,26 @@ final class LibrarySessionStore {
         playlistTracks: PlaylistTracksRepository,
         force: Bool = false
     ) async {
+        let requestedLifecycleID = lifecycleID
+        let requestedProviderIDs = Set(providers.map(\.id))
         await prepareCachedData(using: playlistTracks)
+        guard lifecycleID == requestedLifecycleID else { return }
 
         if let synchronizationTask {
             let activeID = synchronizationID
+            let activeProviderIDs = synchronizationProviderIDs
             await synchronizationTask.value
+            guard lifecycleID == requestedLifecycleID else { return }
             if synchronizationID == activeID {
                 self.synchronizationTask = nil
                 synchronizationID = nil
                 synchronizing = false
             }
-            if force {
+            if Self.shouldRerunSynchronization(
+                activeProviderIDs: activeProviderIDs,
+                requestedProviderIDs: requestedProviderIDs,
+                force: force
+            ) {
                 await synchronize(
                     providers: providers,
                     playlistTracks: playlistTracks,
@@ -97,6 +107,7 @@ final class LibrarySessionStore {
         let master = master
         synchronizing = true
         synchronizationID = operationID
+        synchronizationProviderIDs = requestedProviderIDs
 
         let task = Task {
             await library.loadAll(providers: providers, force: force)
@@ -119,7 +130,16 @@ final class LibrarySessionStore {
               synchronizationID == operationID else { return }
         synchronizationTask = nil
         synchronizationID = nil
+        synchronizationProviderIDs = []
         synchronizing = false
+    }
+
+    nonisolated static func shouldRerunSynchronization(
+        activeProviderIDs: Set<ProviderID>,
+        requestedProviderIDs: Set<ProviderID>,
+        force: Bool
+    ) -> Bool {
+        force || activeProviderIDs != requestedProviderIDs
     }
 
     /// Cancels old-account work and clears every account-owned projection while
@@ -131,6 +151,7 @@ final class LibrarySessionStore {
         preparationTask = nil
         synchronizationTask = nil
         synchronizationID = nil
+        synchronizationProviderIDs = []
         cachedDataReady = false
         synchronizing = false
         library.reset()

@@ -29,8 +29,10 @@ final class BackupScheduler {
     /// Capture a snapshot if one is due. No-ops quietly when the frequency is
     /// manual, the interval has not elapsed, Spotify is not connected, or a run is
     /// already in flight. Safe to call on every launch and foreground.
-    func runIfDue() async {
+    func runIfDue(userID expectedUserID: UUID? = nil) async {
         guard !isRunning else { return }
+        guard let ownerID = AccountSessionStore.currentOwnerID,
+              expectedUserID == nil || expectedUserID == ownerID else { return }
 
         let raw = AccountSessionStore.defaultString(forKey: frequencyKey) ?? "manual"
         guard let interval = Self.interval(for: raw) else { return } // manual / unknown → off
@@ -47,7 +49,11 @@ final class BackupScheduler {
         defer { isRunning = false }
 
         do {
-            _ = try await BackendAPI.shared.captureSnapshot(providerIDs: ids)
+            _ = try await BackendAPI.shared.captureSnapshot(
+                providerIDs: ids,
+                userID: ownerID
+            )
+            guard AccountSessionStore.currentOwnerID == ownerID else { return }
             stampLastRun()
             notifyIfEnabled()
         } catch {

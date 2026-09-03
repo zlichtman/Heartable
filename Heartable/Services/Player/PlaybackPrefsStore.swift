@@ -91,6 +91,8 @@ final class PlaybackPrefsStore {
     private(set) var weights: [String: Int] = [:]
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var ghostExpirationTask: Task<Void, Never>?
+    @ObservationIgnored private var weightWriteTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var lifecycleID = UUID()
 
     init(
         defaults: UserDefaults = .standard,
@@ -211,7 +213,12 @@ final class PlaybackPrefsStore {
 
     /// Forget per-song weights (call on sign-out / delete / account switch).
     /// Mode/ghost are device-level prefs and are intentionally left intact.
-    func reset() { weights = [:] }
+    func reset() {
+        lifecycleID = UUID()
+        for task in weightWriteTasks.values { task.cancel() }
+        weightWriteTasks = [:]
+        weights = [:]
+    }
 
     func order(_ uris: [String]) -> [String] {
         orderForPlayback(uris, mode: mode, weights: weights)
@@ -221,7 +228,14 @@ final class PlaybackPrefsStore {
 
     /// Load per-song weights from the backend (call after sign-in).
     func loadWeights() async {
-        let rows = await BackendAPI.shared.getMyWeights()
+        guard let ownerID = AccountSessionStore.currentOwnerID else {
+            weights = [:]
+            return
+        }
+        let requestID = lifecycleID
+        let rows = await BackendAPI.shared.getMyWeights(userID: ownerID)
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
         var map: [String: Int] = [:]
         for r in rows { map[r.trackUri] = Int(r.weight.rounded()) }
         weights = map
@@ -231,7 +245,21 @@ final class PlaybackPrefsStore {
     func setWeight(_ uri: String, to value: Int) {
         let clamped = max(-100, min(100, value))
         weights[uri] = clamped
-        Task { try? await BackendAPI.shared.setTrackWeight(uri: uri, weight: Double(clamped)) }
+        guard let ownerID = AccountSessionStore.currentOwnerID else { return }
+        let requestID = lifecycleID
+        weightWriteTasks[uri]?.cancel()
+        weightWriteTasks[uri] = Task { @MainActor [weak self] in
+            guard let self,
+                  self.lifecycleID == requestID,
+                  AccountSessionStore.currentOwnerID == ownerID else { return }
+            try? await BackendAPI.shared.setTrackWeight(
+                uri: uri,
+                weight: Double(clamped),
+                userID: ownerID
+            )
+            guard self.lifecycleID == requestID else { return }
+            self.weightWriteTasks[uri] = nil
+        }
     }
 
     /// Boost (+10) / downvote (-10) relative to the current weight.

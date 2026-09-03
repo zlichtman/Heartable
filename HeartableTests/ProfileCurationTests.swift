@@ -60,6 +60,34 @@ final class ProfileCurationTests: XCTestCase {
         XCTAssertEqual(Set(keys).count, keys.count)
     }
 
+    func testThemeGalleryIsCompleteUniqueAndBrandLed() {
+        XCTAssertEqual(Themes.gallery.first?.key, Themes.defaultKey)
+        XCTAssertEqual(Set(Themes.galleryKeys).count, Themes.galleryKeys.count)
+        XCTAssertEqual(Themes.gallery.count, Themes.galleryKeys.count)
+        XCTAssertEqual(Themes.gallery.map(\.key), Themes.galleryKeys)
+        XCTAssertTrue(Themes.gallery.allSatisfy { $0.palette.visualizer.count == 3 })
+    }
+
+    @MainActor
+    func testThemeGalleryPrimaryTextMeetsWCAGAA() {
+        for definition in Themes.gallery {
+            let text = RGBAColor(definition.palette.text)
+            let background = RGBAColor(definition.palette.bg)
+            let card = RGBAColor(definition.palette.card)
+
+            XCTAssertGreaterThanOrEqual(
+                text.contrast(against: background),
+                4.5,
+                "\(definition.label) text must remain readable on its background"
+            )
+            XCTAssertGreaterThanOrEqual(
+                text.contrast(against: card),
+                4.5,
+                "\(definition.label) text must remain readable on cards"
+            )
+        }
+    }
+
     func testClassicTerminalPresetIsRegistered() {
         let terminal = Themes.byKey("classic-terminal")
         XCTAssertEqual(terminal.key, "classic-terminal")

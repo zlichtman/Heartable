@@ -364,8 +364,28 @@ extension BackendAPI {
     /// round-trips via CSV export.
     @discardableResult
     func captureSnapshot(providerIDs: [ProviderID], name: String? = nil) async throws -> ImportSnapshotResult {
+        try await captureSnapshot(
+            providerIDs: providerIDs,
+            name: name,
+            userID: nil
+        )
+    }
+
+    /// Account-bound form used by scheduled work. A backup can spend minutes
+    /// traversing large libraries; if the user signs out during that traversal,
+    /// never insert the old account's tracks into the next session.
+    @discardableResult
+    func captureSnapshot(
+        providerIDs: [ProviderID],
+        name: String? = nil,
+        userID expectedUserID: UUID?
+    ) async throws -> ImportSnapshotResult {
         guard !providerIDs.isEmpty else {
             throw BackendError.message("Pick at least one connected service to back up.")
+        }
+        guard let ownerID = AccountSessionStore.currentOwnerID,
+              expectedUserID == nil || expectedUserID == ownerID else {
+            throw BackendError.notSignedIn
         }
 
         var playlists: [(name: String, rows: [ImportedRow])] = []
@@ -377,15 +397,27 @@ extension BackendAPI {
         var capturedProviderIDs: [ProviderID] = []
 
         for id in providerIDs {
+            guard AccountSessionStore.currentOwnerID == ownerID else {
+                throw BackendError.notSignedIn
+            }
             let provider = ProviderRegistry.provider(for: id)
             var contributed = false
             for pl in await provider.playlists() {
+                guard AccountSessionStore.currentOwnerID == ownerID else {
+                    throw BackendError.notSignedIn
+                }
                 let tracks = await provider.playlistTracks(pl.playlistID)
+                guard AccountSessionStore.currentOwnerID == ownerID else {
+                    throw BackendError.notSignedIn
+                }
                 guard !tracks.isEmpty else { continue }
                 playlists.append((name: pl.name, rows: tracks.map(Self.row(from:))))
                 contributed = true
             }
             let likedTracks = await provider.likedTracks(limit: 500)
+            guard AccountSessionStore.currentOwnerID == ownerID else {
+                throw BackendError.notSignedIn
+            }
             if !likedTracks.isEmpty {
                 liked.append(contentsOf: likedTracks.map(Self.row(from:)))
                 contributed = true
@@ -404,7 +436,8 @@ extension BackendAPI {
                 name: snapshotName,
                 providerIDs: capturedProviderIDs.map(\.rawValue),
                 playlists: playlists,
-                liked: liked
+                liked: liked,
+                expectedUserID: ownerID
             )
         } catch let error as BackendError {
             throw error
@@ -500,10 +533,12 @@ extension BackendAPI {
         name: String,
         providerIDs: [String],
         playlists: [(name: String, rows: [ImportedRow])],
-        liked: [ImportedRow]
+        liked: [ImportedRow],
+        expectedUserID: UUID? = nil
     ) async throws -> ImportSnapshotResult {
         let client = SupabaseClientProvider.shared
-        guard let uid = try? await client.auth.session.user.id else {
+        guard let uid = try? await client.auth.session.user.id,
+              expectedUserID == nil || expectedUserID == uid else {
             throw BackendError.notSignedIn
         }
 
@@ -530,9 +565,17 @@ extension BackendAPI {
         guard let snapshotID = inserted.first?.id else {
             throw BackendError.message("Snapshot insert returned no row.")
         }
+        guard expectedUserID == nil
+                || AccountSessionStore.currentOwnerID == expectedUserID else {
+            throw BackendError.notSignedIn
+        }
 
         // 2) Each playlist + its tracks (position by row order).
         for pl in playlists {
+            guard expectedUserID == nil
+                    || AccountSessionStore.currentOwnerID == expectedUserID else {
+                throw BackendError.notSignedIn
+            }
             let plInsert = SnapshotPlaylistInsertDTO(
                 snapshotId: snapshotID,
                 name: pl.name,

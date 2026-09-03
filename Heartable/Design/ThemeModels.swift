@@ -69,6 +69,22 @@ enum Themes {
     static let all: [ThemeDef] = allThemeDefs
     static let defaultKey = "rosewater"
 
+    /// The intentional, public-facing gallery. Older presets remain in `all`
+    /// so persisted choices keep resolving, while every appearance surface uses
+    /// this one ordered registry instead of maintaining a drifting local list.
+    static let galleryKeys: [String] = [
+        defaultKey,
+        "archive", "blossom", "lavender", "sunset", "champagne", "rosegold",
+        "matcha", "forest", "ocean", "alpine", "github-light",
+        "midnight", "noir", "carbon", "ember", "bordeaux", "juniper",
+        "aurora", "grape", "eclipse", "catppuccin-mocha", "nord",
+        "tokyo-night", "gruvbox-dark", "amber-glass", "synthwave",
+    ]
+
+    static let gallery: [ThemeDef] = galleryKeys.compactMap { key in
+        all.first { $0.key == key }
+    }
+
     /// Hue (0...1) of a theme's `logoColor`, used to sort the flat list within a
     /// group so colors flow in a rainbow rather than registry order.
     private static func hue(of c: Color) -> CGFloat {

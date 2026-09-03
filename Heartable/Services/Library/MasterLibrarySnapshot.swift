@@ -28,17 +28,25 @@ struct MasterLibrarySnapshot: Codable, Sendable {
             .appendingPathComponent("Heartable", isDirectory: true)
     }
 
-    private static var fileURL: URL? {
+    private static func fileURL(ownerID: UUID?) -> URL? {
         directory?.appendingPathComponent(
-            AccountSessionStore.scopedFilename("master-library", ext: "json")
+            AccountSessionStore.scopedFilename(
+                "master-library",
+                ext: "json",
+                ownerID: ownerID
+            )
         )
     }
 
     // MARK: - Persistence
 
     /// Read + decode the snapshot, discarding a version-mismatched or corrupt file.
-    static func load() -> MasterLibrarySnapshot? {
-        guard let url = fileURL, let data = try? Data(contentsOf: url) else { return nil }
+    static func load(
+        ownerID: UUID? = AccountSessionStore.currentOwnerID
+    ) -> MasterLibrarySnapshot? {
+        guard let ownerID,
+              let url = fileURL(ownerID: ownerID),
+              let data = try? Data(contentsOf: url) else { return nil }
         guard let snapshot = try? JSONDecoder().decode(Self.self, from: data),
               snapshot.version == currentVersion else { return nil }
         return snapshot
@@ -46,8 +54,10 @@ struct MasterLibrarySnapshot: Codable, Sendable {
 
     /// Encode + atomically write. Creates the Application Support subfolder if
     /// needed. Best-effort: never throws to the caller.
-    func save() {
-        guard let dir = Self.directory, let url = Self.fileURL else { return }
+    func save(ownerID: UUID? = AccountSessionStore.currentOwnerID) {
+        guard let ownerID,
+              let dir = Self.directory,
+              let url = Self.fileURL(ownerID: ownerID) else { return }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         guard let data = try? JSONEncoder().encode(self) else { return }
         try? data.write(to: url, options: .atomic)

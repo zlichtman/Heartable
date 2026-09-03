@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// App gate: splash → auth → onboarding → tab shell.
+/// App gate: restored auth → onboarding → tab shell.
 struct RootView: View {
     @Environment(AuthStore.self) private var auth
     @Environment(ThemeStore.self) private var theme
@@ -18,8 +18,7 @@ struct RootView: View {
     @Environment(ChatStore.self) private var chats
     @Environment(FriendActivityRepository.self) private var friendActivity
     @Environment(WeeklyRecapStore.self) private var weeklyRecap
-    @State private var minimumLaunchElapsed = false
-
+    @Environment(BackupScheduler.self) private var backupScheduler
     // Onboarding is tracked per account, not per device: store the user IDs that
     // have finished it. Keying on the user (instead of a single device-wide flag)
     // stops a second account inheriting the first's "already onboarded" state, and
@@ -37,28 +36,28 @@ struct RootView: View {
     }
 
     private func markOnboarded() {
-        guard let id = auth.userID?.uuidString else { return }
+        guard let userID = auth.userID else { return }
+        let id = userID.uuidString
         var ids = onboardedIDs
         ids.insert(id)
         onboardedIDsRaw = ids.sorted().joined(separator: ",")
-        me.markOnboardingCompleted(userID: auth.userID)
-        Task { try? await BackendAPI.shared.completeOnboarding() }
+        me.markOnboardingCompleted(userID: userID)
+        Task { try? await BackendAPI.shared.completeOnboarding(userID: userID) }
     }
 
     var body: some View {
         Group {
             if !auth.isConfigured {
                 configNeeded
-            } else if !auth.loaded || !minimumLaunchElapsed {
-                splash
-                    .transition(.opacity)
+            } else if !auth.loaded {
+                launchPlaceholder
             } else if auth.session == nil {
                 AuthView()
             } else if !me.hasResolvedAccount && !isOnboarded {
                 // A reinstall has no local onboarding marker. Resolve the account
                 // profile before deciding whether setup is needed, avoiding a
                 // one-frame flash of onboarding for an established account.
-                splash
+                launchPlaceholder
             } else if !isOnboarded {
                 OnboardingView { markOnboarded() }
             } else {
@@ -68,22 +67,11 @@ struct RootView: View {
                 AppTabView().id(auth.userID)
             }
         }
-        // Keep the handoff from the native launch screen to SwiftUI calm and
-        // continuous instead of flashing directly into the authenticated shell.
-        .animation(.easeOut(duration: 0.18), value: auth.loaded && minimumLaunchElapsed)
         .preferredColorScheme(
-            !auth.loaded || !minimumLaunchElapsed
+            !auth.loaded
                 ? .dark
                 : (theme.current.group == .dark ? .dark : .light)
         )
-        .task {
-            // Very fast auth restores used to skip SwiftUI's first branded frame,
-            // leaving only whichever launch snapshot iOS happened to cache. Keep a
-            // short, consistent handoff without delaying genuinely slow startup.
-            guard !minimumLaunchElapsed else { return }
-            try? await Task.sleep(for: .milliseconds(650))
-            minimumLaunchElapsed = true
-        }
         // Hydrate the account-scoped cached identity before the Profile tab is
         // ever opened, then reconcile it with Supabase in the background.
         .task(id: auth.userID) {
@@ -103,10 +91,15 @@ struct RootView: View {
             if onboardedIDs.contains(userID.uuidString),
                !me.hasCompletedOnboarding {
                 do {
-                    try await BackendAPI.shared.completeOnboarding()
+                    try await BackendAPI.shared.completeOnboarding(userID: userID)
                     me.markOnboardingCompleted(userID: userID)
                 } catch { /* Retried on the next account activation. */ }
             }
+
+            // Automatic backups must not start from the app-level launch task:
+            // at that point Supabase may not have restored the session namespace
+            // yet. Run only after account and provider bootstrap is complete.
+            await backupScheduler.runIfDue(userID: userID)
         }
     }
 
@@ -128,14 +121,12 @@ struct RootView: View {
         WidgetSnapshotStore.clearAndReloadWidgets()
     }
 
-    private var splash: some View {
-        ZStack {
-            // The native launch screen supplies this same canvas. It deliberately
-            // has no image because iOS cannot make launch-screen artwork follow
-            // the user's selected alternate app icon.
-            Color("LaunchBackground").ignoresSafeArea()
-            HeartableLaunchAnimation()
-        }
+    /// Match the system launch screen while the persisted auth session resolves.
+    /// There is deliberately no logo, animation, spinner, or artificial minimum
+    /// duration: a returning user should reach cached app content immediately.
+    private var launchPlaceholder: some View {
+        Color("LaunchBackground").ignoresSafeArea()
+            .accessibilityHidden(true)
     }
 
     private var configNeeded: some View {

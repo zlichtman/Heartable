@@ -13,19 +13,10 @@ struct ThemesView: View {
     /// Non-nil while the editor sheet is presented (create or edit).
     @State private var editingTheme: CustomTheme?
 
-    /// The few color options offered after the brand theme — a balanced spread
-    /// of light and dark families. The other presets stay defined (existing
-    /// selections keep working, icons stay bundled); they're just not pitched.
-    private static let curatedKeys = [
-        "lavender", "sunset", "forest", "ocean",
-        "midnight", "noir", "catppuccin-mocha", "nord",
-        "classic-terminal",
-    ]
-
     /// Brand theme first, curated colors after — plus the current selection if
     /// it's a preset outside the curated set, so its ring is never orphaned.
     private var presets: [ThemeDef] {
-        var keys = [Themes.defaultKey] + Self.curatedKeys
+        var keys = Themes.galleryKeys
         if !CustomTheme.isCustomKey(theme.currentKey), !keys.contains(theme.currentKey) {
             keys.append(theme.currentKey)
         }

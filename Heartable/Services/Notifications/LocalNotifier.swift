@@ -37,7 +37,27 @@ enum LocalNotifier {
         categoryIdentifier: String = "heartable.general"
     ) {
         Task {
-            guard await isAuthorized(), prefAllow() else { return }
+            guard prefAllow() else { return }
+            let center = UNUserNotificationCenter.current()
+            let settings = await center.notificationSettings()
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral:
+                break
+            case .notDetermined:
+                // Heartable routes short-lived feedback through Apple's native
+                // notification UI. Provisional authorization makes that path
+                // available without surprising someone with a permission prompt
+                // during an unrelated action; the Notifications screen remains
+                // the contextual place to opt into normal alerts.
+                let granted = (try? await center.requestAuthorization(
+                    options: [.alert, .badge, .sound, .provisional]
+                )) ?? false
+                guard granted else { return }
+            case .denied:
+                return
+            @unknown default:
+                return
+            }
             let content = UNMutableNotificationContent()
             content.title = title
             content.body = body
@@ -50,7 +70,7 @@ enum LocalNotifier {
                 // A nil trigger asks iOS to deliver the notification immediately.
                 trigger: nil
             )
-            try? await UNUserNotificationCenter.current().add(request)
+            try? await center.add(request)
         }
     }
 

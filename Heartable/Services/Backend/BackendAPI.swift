@@ -15,6 +15,16 @@ struct BackendAPI: Sendable {
         try? await client.auth.session.user.id
     }
 
+    /// Resolve the live Supabase identity and optionally require it to still be
+    /// the account that initiated a long-running operation. This closes the
+    /// small but important window where an old task resumes after account switch
+    /// and would otherwise stamp its payload onto the new session.
+    private func myUID(expected expectedUserID: UUID?) async -> UUID? {
+        guard let uid = await myUID() else { return nil }
+        guard expectedUserID == nil || expectedUserID == uid else { return nil }
+        return uid
+    }
+
     private var nowISO: String { ISO8601DateFormatter().string(from: Date()) }
 
     // MARK: - Profiles
@@ -64,8 +74,10 @@ struct BackendAPI: Sendable {
 
     /// Persist onboarding on the Heartable account, not just this installation.
     /// This prevents a reinstall or second device from presenting setup again.
-    func completeOnboarding() async throws {
-        guard let uid = await myUID() else { throw BackendError.notSignedIn }
+    func completeOnboarding(userID expectedUserID: UUID? = nil) async throws {
+        guard let uid = await myUID(expected: expectedUserID) else {
+            throw BackendError.notSignedIn
+        }
         let row = ProfileUpsertDTO(
             userId: uid,
             onboardingCompletedAt: nowISO,
@@ -93,9 +105,12 @@ struct BackendAPI: Sendable {
     func upsertProviderConnection(
         providerId: ProviderID,
         connected: Bool,
-        metadata: [String: String]
+        metadata: [String: String],
+        userID expectedUserID: UUID? = nil
     ) async throws {
-        guard let uid = await myUID() else { throw BackendError.notSignedIn }
+        guard let uid = await myUID(expected: expectedUserID) else {
+            throw BackendError.notSignedIn
+        }
         let timestamp = nowISO
         let row = ProviderConnectionDTO(
             userId: uid,
@@ -505,8 +520,9 @@ struct BackendAPI: Sendable {
                           trackUri: String?,
                           isPlaying: Bool,
                           progressMs: Int?,
-                          durationMs: Int?) async {
-        guard let uid = await myUID() else { return }
+                          durationMs: Int?,
+                          userID expectedUserID: UUID? = nil) async {
+        guard let uid = await myUID(expected: expectedUserID) else { return }
         let row = NowPlayingUpsertDTO(
             userId: uid,
             trackName: trackName,
@@ -526,8 +542,8 @@ struct BackendAPI: Sendable {
 
     /// Remove the viewer's live presence when playback stops or Ghost Mode turns
     /// on. Reads also enforce a TTL in case this final write never reaches server.
-    func clearMyNowPlaying() async {
-        guard let uid = await myUID() else { return }
+    func clearMyNowPlaying(userID expectedUserID: UUID? = nil) async {
+        guard let uid = await myUID(expected: expectedUserID) else { return }
         _ = try? await client.from("now_playing")
             .delete()
             .eq("user_id", value: uid.uuidString)
@@ -582,8 +598,9 @@ struct BackendAPI: Sendable {
                  trackName: String?,
                  artist: String?,
                  durationMs: Int?,
-                 albumArt: String? = nil) async -> Bool {
-        guard let uid = await myUID() else { return false }
+                 albumArt: String? = nil,
+                 userID expectedUserID: UUID? = nil) async -> Bool {
+        guard let uid = await myUID(expected: expectedUserID) else { return false }
         let row = PlayLogInsertDTO(
             userId: uid,
             trackUri: trackUri,
@@ -734,8 +751,8 @@ struct BackendAPI: Sendable {
 
     // MARK: - Track weights
 
-    func getMyWeights() async -> [TrackWeightDTO] {
-        guard let uid = await myUID() else { return [] }
+    func getMyWeights(userID expectedUserID: UUID? = nil) async -> [TrackWeightDTO] {
+        guard let uid = await myUID(expected: expectedUserID) else { return [] }
         let rows: [TrackWeightDTO] = (try? await client
             .from("track_weights")
             .select("track_uri, weight")
@@ -745,8 +762,14 @@ struct BackendAPI: Sendable {
         return rows
     }
 
-    func setTrackWeight(uri: String, weight: Double) async throws {
-        guard let uid = await myUID() else { throw BackendError.notSignedIn }
+    func setTrackWeight(
+        uri: String,
+        weight: Double,
+        userID expectedUserID: UUID? = nil
+    ) async throws {
+        guard let uid = await myUID(expected: expectedUserID) else {
+            throw BackendError.notSignedIn
+        }
         let row = TrackWeightUpsertDTO(userId: uid, trackUri: uri, weight: weight)
         try await client.from("track_weights")
             .upsert(row, onConflict: "user_id,track_uri")

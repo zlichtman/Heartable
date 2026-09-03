@@ -11,17 +11,8 @@ struct AppearanceView: View {
     @State private var editingTheme: CustomTheme?
     @State private var showingThemePicker = false
 
-    /// One deliberately mixed palette rack. The set stays compact enough to scan,
-    /// while covering warm, cool, light, dark, muted, and high-energy directions.
-    private let presetThemeKeys = [
-        Themes.defaultKey, "blossom", "lavender", "sunset", "champagne",
-        "rosegold", "matcha", "forest", "ocean", "midnight", "eclipse",
-        "carbon", "ember", "aurora", "grape", "catppuccin-mocha", "nord",
-        "tokyo-night",
-    ]
-
     private var shownThemeKeys: Set<String> {
-        Set(presetThemeKeys)
+        Set(Themes.galleryKeys)
     }
 
     private var legacyCurrentTheme: ThemeDef? {
@@ -40,9 +31,7 @@ struct AppearanceView: View {
     }
 
     private var selectableThemes: [ThemeDef] {
-        var result = presetThemeKeys.compactMap { key in
-            Themes.all.first { $0.key == key }
-        }
+        var result = Themes.gallery
         if let legacyCurrentTheme {
             result.append(legacyCurrentTheme)
         }

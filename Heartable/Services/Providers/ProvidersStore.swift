@@ -187,7 +187,8 @@ final class ProvidersStore {
         try? await BackendAPI.shared.upsertProviderConnection(
             providerId: id,
             connected: false,
-            metadata: metadata
+            metadata: metadata,
+            userID: ownerID
         )
     }
 
@@ -247,7 +248,8 @@ final class ProvidersStore {
         try? await BackendAPI.shared.upsertProviderConnection(
             providerId: provider.id,
             connected: true,
-            metadata: metadata
+            metadata: metadata,
+            userID: ownerID
         )
     }
 
@@ -286,11 +288,14 @@ final class ProvidersStore {
     private func persist(manifest: [ProviderConnectionDTO], requestID: UUID) async {
         for row in manifest {
             guard lifecycleID == requestID,
+                  ownerID == row.userId,
+                  AccountSessionStore.currentOwnerID == row.userId,
                   let id = ProviderID(rawValue: row.providerId) else { continue }
             try? await BackendAPI.shared.upsertProviderConnection(
                 providerId: id,
                 connected: row.connected,
-                metadata: row.metadata
+                metadata: row.metadata,
+                userID: row.userId
             )
         }
     }

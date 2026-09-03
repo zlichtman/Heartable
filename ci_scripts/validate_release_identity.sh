@@ -23,6 +23,30 @@ require_literal Heartable/Resources/Heartable.entitlements \
   "group.com.zlichtman.heartable"
 require_literal HeartableWidget/HeartableWidget.entitlements \
   "group.com.zlichtman.heartable"
+require_literal Heartable/Resources/Heartable.entitlements \
+  "com.apple.developer.applesignin"
+require_literal Heartable/Resources/Info.plist \
+  "NSAppleMusicUsageDescription"
+require_literal Heartable/Resources/Info.plist \
+  "NSCameraUsageDescription"
+require_literal Heartable/Resources/Info.plist \
+  "NSContactsUsageDescription"
+require_literal Heartable/Resources/Info.plist \
+  "NSLocalNetworkUsageDescription"
+require_literal Heartable/Resources/PrivacyInfo.xcprivacy \
+  "NSPrivacyAccessedAPICategoryUserDefaults"
+require_literal Heartable/Resources/PrivacyInfo.xcprivacy \
+  "CA92.1"
+require_literal Heartable/Resources/PrivacyInfo.xcprivacy \
+  "1C8F.1"
+require_literal Heartable/Resources/PrivacyInfo.xcprivacy \
+  "NSPrivacyAccessedAPICategoryFileTimestamp"
+require_literal Heartable/Resources/PrivacyInfo.xcprivacy \
+  "C617.1"
+require_literal HeartableWidget/PrivacyInfo.xcprivacy \
+  "NSPrivacyAccessedAPICategoryUserDefaults"
+require_literal HeartableWidget/PrivacyInfo.xcprivacy \
+  "1C8F.1"
 require_literal Heartable.xcodeproj/project.pbxproj \
   "PRODUCT_BUNDLE_IDENTIFIER = com.zlichtman.heartable;"
 require_literal Heartable.xcodeproj/project.pbxproj \
@@ -30,6 +54,33 @@ require_literal Heartable.xcodeproj/project.pbxproj \
 
 test -f "$ROOT/Heartable.xcodeproj/xcshareddata/xcschemes/Heartable.xcscheme" ||
   fail "shared Heartable scheme is missing"
+
+for plist in \
+  Heartable/Resources/Info.plist \
+  Heartable/Resources/Heartable.entitlements \
+  Heartable/Resources/PrivacyInfo.xcprivacy \
+  HeartableWidget/Info.plist \
+  HeartableWidget/HeartableWidget.entitlements \
+  HeartableWidget/PrivacyInfo.xcprivacy
+do
+  plutil -lint "$ROOT/$plist" >/dev/null || fail "$plist is not a valid property list"
+done
+
+# Private signing material and server-side credentials must never enter the
+# public repository. Public client identifiers and Supabase publishable/anon
+# keys are intentionally excluded from this filename-level guard.
+if git -C "$ROOT" ls-files | grep -E \
+  '(^|/)(\.env($|\.)|[^/]+\.(p8|p12|mobileprovision|cer|key)$)'
+then
+  fail "tracked private key, provisioning profile, certificate, or env file found"
+fi
+
+if git -C "$ROOT" grep -I -n -E \
+  'BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY|sb_secret_' -- \
+  . ':!ci_scripts/validate_release_identity.sh'
+then
+  fail "tracked private key or Supabase secret key content found"
+fi
 
 # Xcode Cloud clones through an Apple-managed internal remote even though the
 # workflow is bound to the canonical GitHub repository. Keep the local guard

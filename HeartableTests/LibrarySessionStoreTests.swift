@@ -27,4 +27,28 @@ final class LibrarySessionStoreTests: XCTestCase {
         XCTAssertTrue(session.library.playlists.isEmpty)
         XCTAssertTrue(session.master.tracks.isEmpty)
     }
+
+    func testSynchronizationRerunsForProviderSetChangesAndForcedRefreshes() {
+        XCTAssertFalse(
+            LibrarySessionStore.shouldRerunSynchronization(
+                activeProviderIDs: [.spotify],
+                requestedProviderIDs: [.spotify],
+                force: false
+            )
+        )
+        XCTAssertTrue(
+            LibrarySessionStore.shouldRerunSynchronization(
+                activeProviderIDs: [.spotify],
+                requestedProviderIDs: [.spotify, .apple],
+                force: false
+            )
+        )
+        XCTAssertTrue(
+            LibrarySessionStore.shouldRerunSynchronization(
+                activeProviderIDs: [.spotify],
+                requestedProviderIDs: [.spotify],
+                force: true
+            )
+        )
+    }
 }
