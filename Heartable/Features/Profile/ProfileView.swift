@@ -17,7 +17,7 @@ struct ProfileView: View {
         NavigationStack(path: $navPath) {
             VStack(spacing: 0) {
                 pageHeader
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 16)
                     .padding(.top, 8)
                     .padding(.bottom, 16)
                 ScrollView {
@@ -34,6 +34,7 @@ struct ProfileView: View {
             .background(theme.palette.bg.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: UnifiedPlaylist.self) { PlaylistDetailView(playlist: $0) }
+            .navigationDestination(for: HeartableWidgetRoute.self) { _ in WeeklyRecapView() }
         }
         .task(id: auth.userID) { await me.load(userID: auth.userID) }
     }
@@ -41,15 +42,7 @@ struct ProfileView: View {
     // MARK: - Header
 
     private var pageHeader: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Profile")
-                .font(Typography.heading(32))
-                .foregroundStyle(theme.palette.text)
-            Text("you, your sound, your settings")
-                .font(Typography.body(14))
-                .foregroundStyle(theme.palette.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        HeartablePageHeader(tab: .profile)
     }
 
     // MARK: - Weekly recap

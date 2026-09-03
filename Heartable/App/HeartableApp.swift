@@ -22,6 +22,13 @@ final class HeartableNotificationDelegate: NSObject, UIApplicationDelegate,
     ) async -> UNNotificationPresentationOptions {
         [.banner, .list, .sound]
     }
+
+    func application(
+        _ application: UIApplication,
+        supportedInterfaceOrientationsFor window: UIWindow?
+    ) -> UIInterfaceOrientationMask {
+        PlaylistRotation.supportedOrientations
+    }
 }
 
 @main
@@ -36,6 +43,7 @@ struct HeartableApp: App {
     @State private var prefs = PlaybackPrefsStore()
     @State private var nowPlayingSync = NowPlayingSync()
     @State private var friendLinks = FriendLinks()
+    @State private var widgetLinks = WidgetLinks()
     @State private var skips = SkipStore()
     @State private var engine = PlaybackEngine()
     @State private var me = MeStore()
@@ -79,6 +87,7 @@ struct HeartableApp: App {
                 .environment(prefs)
                 .environment(nowPlayingSync)
                 .environment(friendLinks)
+                .environment(widgetLinks)
                 .environment(skips)
                 .environment(engine)
                 .environment(me)
@@ -91,7 +100,10 @@ struct HeartableApp: App {
                 .environment(chats)
                 .environment(friendActivity)
                 .environment(weeklyRecap)
-                .onOpenURL { friendLinks.handle($0) }
+                .onOpenURL {
+                    friendLinks.handle($0)
+                    widgetLinks.handle($0)
+                }
                 .task {
                     // Reconcile the weekly local-notification digest. Initial
                     // backup scheduling is account-bootstrap work owned by RootView.

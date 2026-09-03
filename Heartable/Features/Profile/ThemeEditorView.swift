@@ -81,11 +81,6 @@ struct ThemeEditorView: View {
             .navigationTitle(editing.name.isEmpty ? "New Theme" : "Edit Theme")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    HeartableSheetDismissButton(
-                        accessibilityLabel: "Dismiss theme editor"
-                    )
-                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
                         .font(Typography.semibold(16))

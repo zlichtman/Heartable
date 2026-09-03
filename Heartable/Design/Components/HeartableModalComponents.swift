@@ -15,31 +15,12 @@ struct HeartableChoiceItem: Identifiable {
     var isDisabled = false
 }
 
-/// The only dismissal affordance used by Heartable-owned sheets. Navigation
-/// pushes use a back chevron; presentations use this down chevron. Text Close,
-/// xmarks, and mixed arrow weights are intentionally excluded.
-struct HeartableSheetDismissButton: View {
-    @Environment(\.dismiss) private var dismiss
-
-    var accessibilityLabel = "Dismiss"
-    var drawsSurface = false
-    var action: (() -> Void)?
-
-    var body: some View {
-        HeartableNavigationButton(
-            kind: .dismiss,
-            accessibilityLabel: accessibilityLabel,
-            drawsSurface: drawsSurface,
-            action: action ?? dismiss.callAsFunction
-        )
-    }
-}
-
 /// Standard presentation chrome. It keeps every Heartable-owned drawer on the
 /// active theme. Transient feedback is delivered by the native iOS notification
 /// system, so sheets do not need their own overlay host.
 private struct HeartableSheetChrome: ViewModifier {
     @Environment(ThemeStore.self) private var theme
+    @Environment(\.dismiss) private var dismiss
 
     let dragIndicator: Visibility
 
@@ -48,6 +29,26 @@ private struct HeartableSheetChrome: ViewModifier {
             .presentationBackground(theme.palette.bg)
             .presentationCornerRadius(30)
             .presentationDragIndicator(dragIndicator)
+            .accessibilityAction(.escape) { dismiss() }
+    }
+}
+
+/// Compact menus grow only as far as their content needs. The same content can
+/// scroll when Dynamic Type or a small screen leaves less room than it needs.
+struct HeartableDrawer<Content: View>: View {
+    @Environment(ThemeStore.self) private var theme
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        ViewThatFits(in: .vertical) {
+            content
+            ScrollView { content }
+                .scrollIndicators(.hidden)
+                .scrollBounceBehavior(.basedOnSize)
+        }
+        .background(theme.palette.bg.ignoresSafeArea())
+        .presentationSizing(.fitted)
+        .heartableSheetChrome()
     }
 }
 
@@ -63,6 +64,7 @@ extension View {
 /// AirPlay, and share controllers remain system-owned after the user chooses one.
 struct HeartableChoiceSheet: View {
     @Environment(ThemeStore.self) private var theme
+    @Environment(\.dismiss) private var dismiss
 
     let title: String
     var subtitle: String? = nil
@@ -71,16 +73,7 @@ struct HeartableChoiceSheet: View {
     let onSelect: (HeartableChoiceItem) -> Void
 
     var body: some View {
-        ViewThatFits(in: .vertical) {
-            content
-            ScrollView {
-                content
-            }
-            .scrollIndicators(.hidden)
-        }
-        .background(theme.palette.bg.ignoresSafeArea())
-        .presentationSizing(.fitted)
-        .heartableSheetChrome()
+        HeartableDrawer { content }
         .accessibilityAction(.escape, onCancel)
     }
 
@@ -98,18 +91,13 @@ struct HeartableChoiceSheet: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                Spacer(minLength: 8)
-                HeartableSheetDismissButton(
-                    accessibilityLabel: "Dismiss \(title)",
-                    drawsSurface: true,
-                    action: onCancel
-                )
             }
 
             VStack(spacing: 9) {
                 ForEach(items) { item in
                     Button {
                         onSelect(item)
+                        dismiss()
                     } label: {
                         HStack(spacing: 12) {
                             RoundedRectangle(cornerRadius: 10)
@@ -212,6 +200,15 @@ struct HeartablePromptSheet: View {
     }
 
     var body: some View {
+        HeartableDrawer { content }
+            .interactiveDismissDisabled(isBusy)
+            .accessibilityAction(.escape) {
+                guard !isBusy else { return }
+                onCancel()
+            }
+    }
+
+    private var content: some View {
         VStack(spacing: 18) {
             RoundedRectangle(cornerRadius: 14)
                 .fill(theme.palette.roseDim)
@@ -291,14 +288,7 @@ struct HeartablePromptSheet: View {
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity)
         .background(theme.palette.bg.ignoresSafeArea())
-        .interactiveDismissDisabled(isBusy)
-        .presentationSizing(.fitted)
-        .heartableSheetChrome()
         .task { focused = true }
-        .accessibilityAction(.escape) {
-            guard !isBusy else { return }
-            onCancel()
-        }
     }
 }
 

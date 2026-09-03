@@ -62,6 +62,9 @@ final class ProfileCurationTests: XCTestCase {
 
     func testThemeGalleryIsCompleteUniqueAndBrandLed() {
         XCTAssertEqual(Themes.gallery.first?.key, Themes.defaultKey)
+        XCTAssertEqual(Themes.gallery.count, 26)
+        XCTAssertEqual(Themes.gallery.count % 2, 0)
+        XCTAssertEqual(Themes.byKey("carbon").key, "carbon")
         XCTAssertEqual(Set(Themes.galleryKeys).count, Themes.galleryKeys.count)
         XCTAssertEqual(Themes.gallery.count, Themes.galleryKeys.count)
         XCTAssertEqual(Themes.gallery.map(\.key), Themes.galleryKeys)

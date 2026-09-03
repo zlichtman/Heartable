@@ -6,5 +6,6 @@ struct HeartableWidgetBundle: WidgetBundle {
     var body: some Widget {
         WeeklyRecapWidget()
         FriendActivityWidget()
+        QuickAccessWidget()
     }
 }

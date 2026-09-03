@@ -19,6 +19,47 @@ struct ImportedRow: Sendable {
     var artist: String?
     var album: String?
     var uri: String
+    var albumArtURL: String? = nil
+    var playlistImageURL: String? = nil
+    var durationMS: Int? = nil
+
+    init(playlist: String, name: String?, artist: String?, album: String?, uri: String,
+         albumArtURL: String? = nil, playlistImageURL: String? = nil, durationMS: Int? = nil) {
+        self.playlist = playlist
+        self.name = name
+        self.artist = artist
+        self.album = album
+        self.uri = uri
+        self.albumArtURL = albumArtURL
+        self.playlistImageURL = playlistImageURL
+        self.durationMS = durationMS
+    }
+
+    init(track: UnifiedTrack) {
+        self.init(playlist: "", name: track.name, artist: track.artistNames,
+                  album: track.album, uri: track.uri,
+                  albumArtURL: track.albumArt?.absoluteString, durationMS: track.durationMs)
+    }
+}
+
+struct CapturedPlaylist: Sendable {
+    let name: String
+    let rows: [ImportedRow]
+    var sourceID: String = ""
+    var imageURL: String? = nil
+
+    init(name: String, rows: [ImportedRow]) {
+        self.name = name
+        self.rows = rows
+        imageURL = rows.compactMap(\.playlistImageURL).first
+    }
+
+    init(playlist: UnifiedPlaylist, tracks: [UnifiedTrack]) {
+        name = playlist.name
+        rows = tracks.map(ImportedRow.init(track:))
+        sourceID = playlist.playlistID
+        imageURL = playlist.image?.absoluteString ?? tracks.compactMap(\.albumArt).first?.absoluteString
+    }
 }
 
 /// RFC-4180 CSV parser: handles quoted fields, escaped quotes (`""`), and commas
@@ -42,6 +83,9 @@ enum CSVImportParser {
         let nameIdx = index(of: ["name", "track", "track_name", "track name", "title", "song", "song name"])
         let artistIdx = index(of: ["artist", "artist_name", "artist name", "artist name(s)", "artists", "artist(s)"])
         let albumIdx = index(of: ["album", "album_name", "album name"])
+        let artworkIdx = index(of: ["album_art_url", "artwork_url", "album art url"])
+        let playlistImageIdx = index(of: ["playlist_image_url", "playlist image url"])
+        let durationIdx = index(of: ["duration_ms", "duration ms"])
         // Accept the common spellings used by Heartable, Exportify, TuneMyMusic, etc.
         let uriIdx = index(of: ["uri", "spotify_track_uri", "spotify uri", "track uri",
                                 "spotify track uri", "track_uri", "spotify_uri"])
@@ -63,6 +107,11 @@ enum CSVImportParser {
         func trackURI(_ raw: String?) -> String? {
             guard let raw, !raw.isEmpty else { return nil }
             if raw.hasPrefix("spotify:track:") { return raw }
+            if let colon = raw.firstIndex(of: ":"),
+               ProviderID(rawValue: String(raw[..<colon])) != nil,
+               raw.index(after: colon) < raw.endIndex {
+                return raw
+            }
             // open.spotify.com/track/<id>?... -> spotify:track:<id>
             if let r = raw.range(of: "track/") {
                 let tail = raw[r.upperBound...]
@@ -88,7 +137,10 @@ enum CSVImportParser {
                 name: field(record, nameIdx),
                 artist: field(record, artistIdx),
                 album: field(record, albumIdx),
-                uri: uri
+                uri: uri,
+                albumArtURL: field(record, artworkIdx),
+                playlistImageURL: field(record, playlistImageIdx),
+                durationMS: field(record, durationIdx).flatMap(Int.init)
             ))
         }
         return rows
@@ -218,28 +270,32 @@ private struct SnapshotInsertDTO: Codable, Sendable {
 /// Insert payload for `snapshot_playlists`. Imported playlists have no Spotify id
 /// (a CSV only carries names), so `spotify_playlist_id` is sent as "" to satisfy
 /// the column's NOT NULL constraint explicitly rather than relying on its default.
-private struct SnapshotPlaylistInsertDTO: Codable, Sendable {
+struct SnapshotPlaylistInsertDTO: Codable, Sendable {
     var snapshotId: UUID
     var spotifyPlaylistId: String = ""
     var name: String
     var trackCount: Int
+    var imageUrl: String? = nil
 
     enum CodingKeys: String, CodingKey {
         case snapshotId = "snapshot_id"
         case spotifyPlaylistId = "spotify_playlist_id"
         case name
         case trackCount = "track_count"
+        case imageUrl = "image_url"
     }
 }
 
 /// Insert payload for `snapshot_tracks`.
-private struct SnapshotTrackInsertDTO: Codable, Sendable {
+struct SnapshotTrackInsertDTO: Codable, Sendable {
     var snapshotPlaylistId: UUID
     var spotifyTrackUri: String
     var trackName: String?
     var artistName: String?
     var albumName: String?
     var position: Int
+    var albumArtUrl: String? = nil
+    var durationMs: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case snapshotPlaylistId = "snapshot_playlist_id"
@@ -248,17 +304,21 @@ private struct SnapshotTrackInsertDTO: Codable, Sendable {
         case artistName = "artist_name"
         case albumName = "album_name"
         case position
+        case albumArtUrl = "album_art_url"
+        case durationMs = "duration_ms"
     }
 }
 
 /// Insert payload for `snapshot_liked_tracks`.
-private struct SnapshotLikedTrackInsertDTO: Codable, Sendable {
+struct SnapshotLikedTrackInsertDTO: Codable, Sendable {
     var snapshotId: UUID
     var spotifyTrackUri: String
     var trackName: String?
     var artistName: String?
     var albumName: String?
     var position: Int
+    var albumArtUrl: String? = nil
+    var durationMs: Int? = nil
 
     enum CodingKeys: String, CodingKey {
         case snapshotId = "snapshot_id"
@@ -267,6 +327,8 @@ private struct SnapshotLikedTrackInsertDTO: Codable, Sendable {
         case artistName = "artist_name"
         case albumName = "album_name"
         case position
+        case albumArtUrl = "album_art_url"
+        case durationMs = "duration_ms"
     }
 }
 
@@ -338,12 +400,14 @@ extension BackendAPI {
 
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let snapshotName = trimmedName.isEmpty ? "Imported snapshot" : trimmedName
-        let playlists = playlistOrder.map { (name: $0, rows: byPlaylist[$0] ?? []) }
+        let playlists = playlistOrder.map { CapturedPlaylist(name: $0, rows: byPlaylist[$0] ?? []) }
 
         do {
             return try await insertSnapshot(
                 name: snapshotName,
-                providerIDs: ["spotify"],
+                providerIDs: Array(Set(rows.compactMap {
+                    ProviderID(rawValue: String($0.uri.prefix { $0 != ":" }))?.rawValue
+                })).sorted(),
                 playlists: playlists,
                 liked: liked
             )
@@ -388,7 +452,7 @@ extension BackendAPI {
             throw BackendError.notSignedIn
         }
 
-        var playlists: [(name: String, rows: [ImportedRow])] = []
+        var playlists: [CapturedPlaylist] = []
         var liked: [ImportedRow] = []
         // A snapshot's label must list only the services that actually landed in
         // it. A selected service that returns nothing (not truly connected, empty
@@ -411,7 +475,7 @@ extension BackendAPI {
                     throw BackendError.notSignedIn
                 }
                 guard !tracks.isEmpty else { continue }
-                playlists.append((name: pl.name, rows: tracks.map(Self.row(from:))))
+                playlists.append(CapturedPlaylist(playlist: pl, tracks: tracks))
                 contributed = true
             }
             let likedTracks = await provider.likedTracks(limit: 500)
@@ -419,7 +483,7 @@ extension BackendAPI {
                 throw BackendError.notSignedIn
             }
             if !likedTracks.isEmpty {
-                liked.append(contentsOf: likedTracks.map(Self.row(from:)))
+                liked.append(contentsOf: likedTracks.map(ImportedRow.init(track:)))
                 contributed = true
             }
             if contributed { capturedProviderIDs.append(id) }
@@ -444,11 +508,6 @@ extension BackendAPI {
         } catch {
             throw BackendError.message("Backup failed. Please try again.")
         }
-    }
-
-    private static func row(from track: UnifiedTrack) -> ImportedRow {
-        ImportedRow(playlist: "", name: track.name, artist: track.artistNames,
-                    album: track.album, uri: track.uri)
     }
 
     /// The distinct set of services actually present in a snapshot, derived from
@@ -532,7 +591,7 @@ extension BackendAPI {
     private func insertSnapshot(
         name: String,
         providerIDs: [String],
-        playlists: [(name: String, rows: [ImportedRow])],
+        playlists: [CapturedPlaylist],
         liked: [ImportedRow],
         expectedUserID: UUID? = nil
     ) async throws -> ImportSnapshotResult {
@@ -578,8 +637,10 @@ extension BackendAPI {
             }
             let plInsert = SnapshotPlaylistInsertDTO(
                 snapshotId: snapshotID,
+                spotifyPlaylistId: pl.sourceID,
                 name: pl.name,
-                trackCount: pl.rows.count
+                trackCount: pl.rows.count,
+                imageUrl: pl.imageURL
             )
             let plInserted: [IdRowDTO] = try await client
                 .from("snapshot_playlists")
@@ -596,7 +657,9 @@ extension BackendAPI {
                     trackName: r.name,
                     artistName: r.artist,
                     albumName: r.album,
-                    position: idx
+                    position: idx,
+                    albumArtUrl: r.albumArtURL,
+                    durationMs: r.durationMS
                 )
             }
             if !trackPayload.isEmpty {
@@ -613,7 +676,9 @@ extension BackendAPI {
                     trackName: r.name,
                     artistName: r.artist,
                     albumName: r.album,
-                    position: idx
+                    position: idx,
+                    albumArtUrl: r.albumArtURL,
+                    durationMs: r.durationMS
                 )
             }
             try await client.from("snapshot_liked_tracks").insert(likedPayload).execute()

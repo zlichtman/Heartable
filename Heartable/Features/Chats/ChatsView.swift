@@ -38,7 +38,7 @@ struct ChatsView: View {
         VStack(spacing: 0) {
             header
                 .padding(.horizontal, 16)
-                .padding(.top, 6)
+                .padding(.top, 8)
                 .padding(.bottom, 10)
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
@@ -75,15 +75,7 @@ struct ChatsView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Chats")
-                .font(Typography.heading(32))
-                .foregroundStyle(theme.palette.text)
-            Text("share songs with the people you love")
-                .font(Typography.body(14))
-                .foregroundStyle(theme.palette.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        HeartablePageHeader(tab: .chats)
     }
 
     private var loadingState: some View {
@@ -102,7 +94,7 @@ struct ChatsView: View {
             Text("No friends yet")
                 .font(Typography.semibold(17))
                 .foregroundStyle(theme.palette.text)
-            Text("Add friends from Discover to start sharing songs, playlists, and mixtapes.")
+            Text("Add friends from Heartable to start sharing songs, playlists, and mixtapes.")
                 .font(Typography.body(13))
                 .foregroundStyle(theme.palette.textSecondary)
                 .multilineTextAlignment(.center)

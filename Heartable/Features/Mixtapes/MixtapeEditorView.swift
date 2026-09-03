@@ -383,13 +383,6 @@ private struct AddTracksSheet: View {
             .searchable(text: $query, prompt: "Search connected services")
             .onSubmit(of: .search) { Task { await runSearch() } }
             .task(id: query) { await runSearch() }
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    HeartableSheetDismissButton(
-                        accessibilityLabel: "Dismiss song search"
-                    )
-                }
-            }
         }
         .heartableSheetChrome()
     }
@@ -440,11 +433,15 @@ private struct ShareMixtapeSheet: View {
     @State private var loaded = false
 
     var body: some View {
-        NavigationStack {
-            ZStack {
-                theme.palette.bg.ignoresSafeArea()
-                ScrollView {
+        HeartableDrawer {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Share")
+                    .font(Typography.heading(23))
+                    .foregroundStyle(theme.palette.text)
                     VStack(alignment: .leading, spacing: 0) {
+                        if !loaded {
+                            ProgressView().tint(theme.palette.rose)
+                        }
                         if friends.isEmpty && loaded {
                             Text("No friends yet. Add some from the Friends tab.")
                                 .font(Typography.body(13))
@@ -458,22 +455,12 @@ private struct ShareMixtapeSheet: View {
                             }
                         }
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.bottom, 40)
-                }
             }
-            .navigationTitle("Share")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    HeartableSheetDismissButton(
-                        accessibilityLabel: "Dismiss sharing"
-                    )
-                }
-            }
-            .task { await load() }
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+            .padding(.bottom, 22)
         }
-        .heartableSheetChrome()
+        .task { await load() }
     }
 
     private func friendRow(_ f: FriendDTO, friendID: UUID) -> some View {
@@ -515,5 +502,6 @@ private struct ShareMixtapeSheet: View {
             await BackendAPI.shared.unshareMixtape(id: mixtapeID, friendID: friendID)
             sharedWith.remove(friendID)
         }
+        dismiss()
     }
 }

@@ -115,6 +115,15 @@ struct HeartableDestructiveConfirmation: View {
     }
 
     var body: some View {
+        HeartableDrawer { content }
+            .interactiveDismissDisabled(isBusy)
+            .accessibilityAction(.escape) {
+                guard !isBusy else { return }
+                onCancel()
+            }
+    }
+
+    private var content: some View {
         VStack(spacing: dynamicTypeSize.isAccessibilitySize ? 16 : 20) {
             ZStack {
                 Circle()
@@ -179,12 +188,5 @@ struct HeartableDestructiveConfirmation: View {
         .padding(.bottom, 18)
         .frame(maxWidth: .infinity)
         .background(theme.palette.bg.ignoresSafeArea())
-        .interactiveDismissDisabled(isBusy)
-        .accessibilityAction(.escape) {
-            guard !isBusy else { return }
-            onCancel()
-        }
-        .presentationSizing(.fitted)
-        .heartableSheetChrome()
     }
 }

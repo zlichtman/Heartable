@@ -353,8 +353,7 @@ struct SharedMixtapeComposerSheet: View {
     @State private var errorMessage: String?
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        HeartableDrawer {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 8) {
                         Image(systemName: "cassette.fill")
@@ -439,20 +438,8 @@ struct SharedMixtapeComposerSheet: View {
                     .opacity(normalizedTitle.isEmpty ? 0.55 : 1)
                 }
                 .padding(20)
-            }
-            .background(theme.palette.bg.ignoresSafeArea())
-            .navigationTitle("New mixtape")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    HeartableSheetDismissButton(
-                        accessibilityLabel: "Dismiss mixtape composer"
-                    )
-                }
-            }
             .task { titleFocused = true }
         }
-        .heartableSheetChrome()
     }
 
     private var normalizedTitle: String {

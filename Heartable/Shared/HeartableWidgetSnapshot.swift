@@ -11,6 +11,20 @@ struct HeartableWidgetSnapshot: Codable, Sendable, Equatable {
     var weeklyRecap: WidgetWeeklyRecapSnapshot?
     var friendActivity: [WidgetFriendActivitySnapshot]
 
+    /// Never label a previous week's cached totals as "this week". Keep stored
+    /// data intact so the app can still reconcile it after waking.
+    func displayed(at date: Date) -> HeartableWidgetSnapshot {
+        var result = self
+        if let recap = weeklyRecap,
+           !(recap.weekStart <= date && date < recap.weekEnd) {
+            result.weeklyRecap = nil
+        }
+        result.friendActivity = friendActivity.filter {
+            $0.playedAt <= date && date.timeIntervalSince($0.playedAt) < 86_400
+        }
+        return result
+    }
+
     static func empty(at date: Date = Date()) -> HeartableWidgetSnapshot {
         HeartableWidgetSnapshot(
             version: currentVersion,
@@ -46,6 +60,7 @@ enum WidgetSnapshotStore {
     static let appGroupIdentifier = "group.com.zlichtman.heartable"
     static let recapWidgetKind = "HeartableWeeklyRecapWidget"
     static let friendActivityWidgetKind = "HeartableFriendActivityWidget"
+    static let quickAccessWidgetKind = "HeartableQuickAccessWidget"
 
     private static let storageKey = "heartable.widget.snapshot.v1"
 

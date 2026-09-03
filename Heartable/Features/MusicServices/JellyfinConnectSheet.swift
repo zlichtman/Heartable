@@ -16,7 +16,7 @@ struct JellyfinConnectSheet: View {
     @State private var error: String?
 
     var body: some View {
-        ScrollView {
+        HeartableDrawer {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 12) {
                     ProviderBadge(id: .jellyfin, size: 44, connected: true)
@@ -28,10 +28,6 @@ struct JellyfinConnectSheet: View {
                             .foregroundStyle(theme.palette.textMuted)
                     }
                     Spacer(minLength: 8)
-                    HeartableSheetDismissButton(
-                        accessibilityLabel: "Dismiss Jellyfin setup",
-                        drawsSurface: true
-                    )
                 }
 
                 Text("Enter your Jellyfin server address and account. Full tracks stream straight from your server and play right in the app.")

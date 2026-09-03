@@ -85,12 +85,26 @@ struct SpotifyDevicePickerSheet: View {
         "No Spotify Connect devices are currently available."
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        HeartableDrawer {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("Playback device")
+                        .font(Typography.heading(23))
+                        .foregroundStyle(theme.palette.text)
+                    Spacer(minLength: 8)
+                    Button { Task { await load() } } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .foregroundStyle(theme.palette.rose)
+                            .frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(loading || busyID != nil)
+                    .accessibilityLabel("Refresh devices")
+                }
                 VStack(alignment: .leading, spacing: 8) {
                     if loading {
                         HStack { Spacer(); ProgressView().tint(theme.palette.rose); Spacer() }
-                            .padding(.top, 40)
+                            .padding(.vertical, 12)
                     } else if devices.isEmpty {
                         VStack(spacing: 8) {
                             Text("No Spotify devices found")
@@ -104,37 +118,18 @@ struct SpotifyDevicePickerSheet: View {
                                 .multilineTextAlignment(.center)
                         }
                         .frame(maxWidth: .infinity)
-                        .padding(.top, 36)
+                        .padding(.vertical, 12)
                     } else {
                         ForEach(devices, id: \.id) { device in
                             deviceRow(device)
                         }
                     }
                 }
-                .padding(16)
             }
-            .background(theme.palette.bg.ignoresSafeArea())
-            .navigationTitle("Connect to a device")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button { Task { await load() } } label: {
-                        Image(systemName: "arrow.clockwise")
-                            .foregroundStyle(theme.palette.rose)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .disabled(loading)
-                    .accessibilityLabel("Refresh devices")
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    HeartableSheetDismissButton(
-                        accessibilityLabel: "Dismiss device picker"
-                    )
-                }
-            }
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+            .padding(.bottom, 22)
         }
-        .heartableSheetChrome()
         .task { await load() }
     }
 

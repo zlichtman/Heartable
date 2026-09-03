@@ -37,12 +37,10 @@ struct MusicServicesView: View {
         }
         .sheet(item: $setupEntry) { entry in
             ServiceSetupSheet(entry: entry)
-                .presentationDetents([.medium, .large])
                 .heartableSheetChrome()
         }
         .sheet(isPresented: $jellyfinSheetShown) {
             JellyfinConnectSheet()
-                .presentationDetents([.medium, .large])
                 .heartableSheetChrome()
         }
         .sheet(isPresented: $lastfmPromptShown) {
@@ -289,10 +287,11 @@ struct MusicServicesView: View {
 private struct ServiceSetupSheet: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(\.openURL) private var openURL
+    @Environment(\.dismiss) private var dismiss
     let entry: ProviderCatalogEntry
 
     var body: some View {
-        ScrollView {
+        HeartableDrawer {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .top, spacing: 12) {
                     ProviderBadge(id: entry.id, size: 44, connected: true)
@@ -303,10 +302,6 @@ private struct ServiceSetupSheet: View {
                             .foregroundStyle(theme.palette.textMuted)
                     }
                     Spacer(minLength: 8)
-                    HeartableSheetDismissButton(
-                        accessibilityLabel: "Dismiss \(entry.label) setup",
-                        drawsSurface: true
-                    )
                 }
 
                 Text(entry.blurb)
@@ -330,6 +325,7 @@ private struct ServiceSetupSheet: View {
 
                 if let url = entry.setupURL {
                     Button {
+                        dismiss()
                         openURL(url)
                     } label: {
                         HStack(spacing: 6) {

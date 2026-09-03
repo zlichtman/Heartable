@@ -267,130 +267,44 @@ struct ListeningHistoryView: View {
 }
 
 private struct GhostModeDurationSheet: View {
-    @Environment(ThemeStore.self) private var theme
     @Environment(\.dismiss) private var dismiss
 
     let isEnabled: Bool
     let onSelect: (GhostModeDuration) -> Void
     let onDisable: () -> Void
 
-    var body: some View {
-        ViewThatFits(in: .vertical) {
-            content
-            ScrollView {
-                content
-            }
-            .scrollIndicators(.hidden)
-        }
-        .background(theme.palette.bg.ignoresSafeArea())
-        .presentationSizing(.fitted)
-        .heartableSheetChrome()
-    }
-
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 13) {
-                RoundedRectangle(cornerRadius: 13)
-                    .fill(theme.palette.roseDim)
-                    .frame(width: 48, height: 48)
-                    .overlay {
-                        Image(systemName: "eye.slash.fill")
-                            .font(.system(size: 19, weight: .semibold))
-                            .foregroundStyle(theme.palette.rose)
-                    }
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Ghost Mode")
-                        .font(Typography.semibold(17))
-                        .foregroundStyle(theme.palette.text)
-                    Text("New plays stay private while Ghost Mode is on.")
-                        .font(Typography.body(12))
-                        .foregroundStyle(theme.palette.textMuted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 4)
-
-                HeartableSheetDismissButton(
-                    accessibilityLabel: "Dismiss Ghost Mode options",
-                    drawsSurface: true
-                )
-            }
-
-            VStack(spacing: 9) {
-                ForEach(GhostModeDuration.allCases) { duration in
-                    durationButton(duration)
-                }
-            }
-
-            if isEnabled {
-                Button(role: .destructive, action: onDisable) {
-                    Label("Turn off Ghost Mode", systemImage: "eye.fill")
-                        .font(Typography.semibold(14))
-                        .foregroundStyle(theme.palette.danger)
-                        .frame(maxWidth: .infinity, minHeight: 48)
-                        .background(theme.palette.card, in: Capsule())
-                        .overlay {
-                            Capsule()
-                                .stroke(theme.palette.danger.opacity(0.35), lineWidth: 1)
-                        }
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 18)
-        .padding(.top, 12)
-        .padding(.bottom, 20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func durationButton(_ duration: GhostModeDuration) -> some View {
-        Button {
-            onSelect(duration)
-        } label: {
-            HStack(spacing: 12) {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(theme.palette.roseDim)
-                    .frame(width: 38, height: 38)
-                    .overlay {
-                        Image(systemName: duration.systemImage)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(theme.palette.rose)
-                    }
-                    .accessibilityHidden(true)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(duration.title)
-                        .font(Typography.semibold(14))
-                        .foregroundStyle(theme.palette.text)
-                    Text(duration.detail)
-                        .font(Typography.body(11))
-                        .foregroundStyle(theme.palette.textMuted)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 6)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(theme.palette.textMuted)
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, 12)
-            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
-            .background(
-                theme.palette.card,
-                in: RoundedRectangle(cornerRadius: Theme.Radius.md)
+    private var items: [HeartableChoiceItem] {
+        var options = GhostModeDuration.allCases.map { duration in
+            HeartableChoiceItem(
+                id: duration.rawValue,
+                icon: duration.systemImage,
+                title: duration.title
             )
-            .overlay {
-                RoundedRectangle(cornerRadius: Theme.Radius.md)
-                    .stroke(theme.palette.border, lineWidth: 1)
-            }
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel(duration.title)
-        .accessibilityHint(duration.detail)
+        if isEnabled {
+            options.append(HeartableChoiceItem(
+                id: "disable",
+                icon: "eye.fill",
+                title: "Turn off Ghost Mode",
+                isDestructive: true
+            ))
+        }
+        return options
+    }
+
+    var body: some View {
+        HeartableChoiceSheet(
+            title: "Ghost Mode",
+            subtitle: "New plays stay private while Ghost Mode is on.",
+            items: items,
+            onCancel: { dismiss() },
+            onSelect: { item in
+                if item.id == "disable" {
+                    onDisable()
+                } else if let duration = GhostModeDuration(rawValue: item.id) {
+                    onSelect(duration)
+                }
+            }
+        )
     }
 }

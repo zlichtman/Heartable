@@ -66,6 +66,12 @@ screen-specific state in feature modules.
 - `Heartable/Services/Social`: durable activity and friend sync
 - `HeartableWidget`: app-group snapshots only
 
+Widgets read secret-free snapshots, never provider credentials or backend clients.
+Keep recap/friend data privacy-sensitive and clear it on account transitions.
+Weekly labels must expire at the week boundary. Widget deep links use the
+allow-listed `HeartableWidgetRoute` contract and wait for authentication before
+navigating. Do not imply WidgetKit refreshes are real-time playback updates.
+
 State that belongs to a user must either live in a store reset by the account
 shell or use an account-scoped persistence key/file. Register provider
 credentials and account-owned preferences with `AccountSessionStore`.
@@ -136,9 +142,17 @@ metadata and targeted refreshes. Never mix data between accounts.
 Search supports explicit content-type and provider filters. Artist-page sorting
 is limited to A–Z and Song Count.
 
+Playlist detail alone enables landscape rotation for a song-cover browser: one
+card per track occurrence, in the selected list order (not grouped by album).
+Retain the portrait list and its scroll position while browsing covers. Reuse
+the existing artwork cache and playback router; rotation never starts a sync.
+
 Backups must remain inspectable in-app: users can drill from a snapshot into its
 playlists and tracks. The Changes view compares each snapshot with its immediate
 predecessor and exposes added/removed song occurrences with collection context.
+Capture playlist images, track album-art URLs, and durations in the existing
+snapshot columns. CSV export/import must preserve optional artwork metadata and
+provider-native URIs. Never replace historical track content with today's library.
 
 ## Listening stats
 
@@ -174,6 +188,8 @@ Photo Library, Camera, and Files.
 
 ## UI and accessibility
 
+- Root pages use `HeartablePageHeader` and the subtitle copy in `AppTab`:
+  lowercase, short comma-separated phrases without a trailing period.
 - Use semantic palette tokens; do not hard-code unrelated tints into the tab
   bar, sheets, or alerts.
 - Prefer the warmer Library/Profile visual language for playlist detail,
@@ -182,9 +198,11 @@ Photo Library, Camera, and Files.
 - Route all transient feedback through `BannerCenter` as an app-wide Heartable
   notification. `BannerCenter` delegates to Apple's notification system; never
   add screen-local toasts, snackbars, overlays, or duplicate playback feedback.
-- Navigation pushes use the shared back chevron. Heartable-owned sheets use the
-  shared down-chevron dismissal; do not introduce text Close buttons or xmarks.
-  Use `heartableSheetChrome` for theme coverage and presentation geometry.
+- Navigation pushes use the shared back chevron. Option drawers use the native
+  drag handle and swipe-to-dismiss, without redundant Close/down/x buttons.
+  Use `HeartableDrawer` for content-fitted menus and confirmations, and
+  `heartableSheetChrome` for theme coverage. Single selections close the menu;
+  editable forms retain their Save action. Full player/lyrics keep matched controls.
 - Use a single centered confirmation component for destructive or account actions.
 - Every icon-only control needs an accessibility label and a minimum 44-point
   hit target.

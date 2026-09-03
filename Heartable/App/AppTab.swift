@@ -6,6 +6,16 @@ enum AppTab: String, CaseIterable, Identifiable {
     case discover, chats, library, backups, profile
     var id: String { rawValue }
 
+    var subtitle: String {
+        switch self {
+        case .discover: "your week, your friends, your sound"
+        case .chats: "your friends, your conversations"
+        case .library: "every service, one place"
+        case .backups: "your library, safely kept"
+        case .profile: "you, your sound, your settings"
+        }
+    }
+
     var title: String {
         switch self {
         case .discover: "Heartable"

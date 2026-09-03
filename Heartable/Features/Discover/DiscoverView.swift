@@ -13,6 +13,7 @@ struct DiscoverView: View {
 
     /// Owned by AppTabView so re-tapping the tab pops back to root.
     @Binding var navPath: NavigationPath
+    var friendsRequestID: UUID? = nil
 
     @State private var store = DiscoverStore()
     @State private var mode: Mode = .top
@@ -84,6 +85,9 @@ struct DiscoverView: View {
             }
             .task(id: friendLinks.relationshipRevision) { await store.loadFriends() }
             .task(id: loadRequest) { await reloadMode() }
+            .onChange(of: friendsRequestID, initial: true) {
+                if friendsRequestID != nil { mode = .friends }
+            }
             .onChange(of: providers.refreshGeneration) {
                 if !selectableTopSources.contains(topSource) {
                     topSource = .heartable
@@ -117,15 +121,7 @@ struct DiscoverView: View {
     // MARK: Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Heartable")
-                .font(Typography.heading(32))
-                .foregroundStyle(theme.palette.text)
-            Text("your week, your friends, your sound")
-                .font(Typography.body(14))
-                .foregroundStyle(theme.palette.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        HeartablePageHeader(tab: .discover)
     }
 
     // MARK: Friends strip

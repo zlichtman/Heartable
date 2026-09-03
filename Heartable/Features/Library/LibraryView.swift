@@ -110,19 +110,14 @@ struct LibraryView: View {
     private var headerBlock: some View {
         VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("Library")
-                    .font(Typography.heading(32))
-                    .foregroundStyle(theme.palette.text)
-                Text("every service, one place")
-                    .font(Typography.body(14))
-                    .foregroundStyle(theme.palette.textSecondary)
+                HeartablePageHeader(tab: .library)
                 providerStatusRow
             }
             searchRow
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
-        .padding(.top, 6)
+        .padding(.top, 8)
         .padding(.bottom, 10)
     }
 
@@ -625,13 +620,6 @@ private struct CustomOrderSheet: View {
             .environment(\.editMode, .constant(.active))
             .navigationTitle("Custom order")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    HeartableSheetDismissButton(
-                        accessibilityLabel: "Dismiss custom order"
-                    )
-                }
-            }
         }
         .heartableSheetChrome()
     }
@@ -670,13 +658,6 @@ private struct ProviderOrderSheet: View {
             .environment(\.editMode, .constant(.active))
             .navigationTitle("Creator priority")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    HeartableSheetDismissButton(
-                        accessibilityLabel: "Dismiss creator priority"
-                    )
-                }
-            }
         }
         .heartableSheetChrome()
     }

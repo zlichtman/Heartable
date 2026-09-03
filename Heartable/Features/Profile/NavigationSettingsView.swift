@@ -11,17 +11,6 @@ struct AppearanceView: View {
     @State private var editingTheme: CustomTheme?
     @State private var showingThemePicker = false
 
-    private var shownThemeKeys: Set<String> {
-        Set(Themes.galleryKeys)
-    }
-
-    private var legacyCurrentTheme: ThemeDef? {
-        guard !CustomTheme.isCustomKey(theme.currentKey),
-              !shownThemeKeys.contains(theme.currentKey)
-        else { return nil }
-        return Themes.all.first { $0.key == theme.currentKey }
-    }
-
     private var iconColumns: [GridItem] {
         let count = dynamicTypeSize.isAccessibilitySize ? 2 : 4
         return Array(
@@ -31,11 +20,7 @@ struct AppearanceView: View {
     }
 
     private var selectableThemes: [ThemeDef] {
-        var result = Themes.gallery
-        if let legacyCurrentTheme {
-            result.append(legacyCurrentTheme)
-        }
-        return result
+        Themes.gallery
     }
 
     var body: some View {
@@ -231,7 +216,7 @@ private struct ThemePickerSheet: View {
         if dynamicTypeSize.isAccessibilitySize {
             [GridItem(.flexible(), spacing: 10)]
         } else {
-            [GridItem(.adaptive(minimum: 132), spacing: 10)]
+            [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)]
         }
     }
 
@@ -257,12 +242,12 @@ private struct ThemePickerSheet: View {
         .sheet(item: $editingTheme) { ThemeEditorView(editing: $0) }
         .sensoryFeedback(.selection, trigger: theme.currentKey)
         .presentationDetents([.large])
-        .heartableSheetChrome(dragIndicator: .hidden)
+        .heartableSheetChrome()
         .accessibilityAction(.escape) { dismiss() }
     }
 
-    /// Deliberately outside the scroll view: the title and one Heartable dismiss
-    /// affordance remain anchored and readable as the selected palette changes.
+    /// Keep the title anchored while the palette changes; the native grabber is
+    /// the only visible dismissal affordance.
     private var pickerHeader: some View {
         HStack(spacing: 12) {
             Text("Theme")
@@ -271,10 +256,6 @@ private struct ThemePickerSheet: View {
 
             Spacer(minLength: 8)
 
-            HeartableSheetDismissButton(
-                accessibilityLabel: "Dismiss theme picker",
-                drawsSurface: true
-            )
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)

@@ -76,7 +76,7 @@ enum Themes {
         defaultKey,
         "archive", "blossom", "lavender", "sunset", "champagne", "rosegold",
         "matcha", "forest", "ocean", "alpine", "github-light",
-        "midnight", "noir", "carbon", "ember", "bordeaux", "juniper",
+        "midnight", "noir", "ember", "bordeaux", "juniper",
         "aurora", "grape", "eclipse", "catppuccin-mocha", "nord",
         "tokyo-night", "gruvbox-dark", "amber-glass", "synthwave",
     ]

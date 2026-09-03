@@ -44,7 +44,6 @@ struct AuthView: View {
             PasswordRecoveryView(initialEmail: email)
                 .environment(auth)
                 .environment(theme)
-                .presentationDetents([.medium])
         }
     }
 
@@ -222,7 +221,7 @@ private struct PasswordRecoveryView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        HeartableDrawer {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Reset your password")
                     .font(Typography.heading(26))
@@ -270,17 +269,9 @@ private struct PasswordRecoveryView: View {
                         .foregroundStyle(theme.palette.danger)
                 }
 
-                Spacer(minLength: 0)
             }
             .padding(24)
             .background(theme.palette.bg.ignoresSafeArea())
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    HeartableSheetDismissButton(
-                        accessibilityLabel: "Dismiss password recovery"
-                    )
-                }
-            }
         }
         .heartableSheetChrome()
     }

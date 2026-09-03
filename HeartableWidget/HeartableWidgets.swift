@@ -1,5 +1,6 @@
 import SwiftUI
 import WidgetKit
+import UIKit
 
 private struct HeartableTimelineEntry: TimelineEntry {
     let date: Date
@@ -8,17 +9,21 @@ private struct HeartableTimelineEntry: TimelineEntry {
 
 private struct HeartableTimelineProvider: TimelineProvider {
     func placeholder(in context: Context) -> HeartableTimelineEntry {
-        HeartableTimelineEntry(date: Date(), snapshot: nil)
+        previewEntry()
     }
 
     func getSnapshot(
         in context: Context,
         completion: @escaping (HeartableTimelineEntry) -> Void
     ) {
+        if context.isPreview {
+            completion(previewEntry())
+            return
+        }
         completion(
             HeartableTimelineEntry(
                 date: Date(),
-                snapshot: WidgetSnapshotStore.load()
+                snapshot: WidgetSnapshotStore.load()?.displayed(at: Date())
             )
         )
     }
@@ -28,15 +33,43 @@ private struct HeartableTimelineProvider: TimelineProvider {
         completion: @escaping (Timeline<HeartableTimelineEntry>) -> Void
     ) {
         let now = Date()
+        let snapshot = WidgetSnapshotStore.load()
         let entry = HeartableTimelineEntry(
             date: now,
-            snapshot: WidgetSnapshotStore.load()
+            snapshot: snapshot?.displayed(at: now)
         )
         // App refreshes explicitly after real data changes. The periodic policy
         // keeps relative timestamps current without network work in the extension.
-        let refresh = Calendar.current.date(byAdding: .minute, value: 30, to: now)
+        var refresh = Calendar.current.date(byAdding: .minute, value: 30, to: now)
             ?? now.addingTimeInterval(30 * 60)
+        if let weekEnd = snapshot?.weeklyRecap?.weekEnd, weekEnd > now {
+            refresh = min(refresh, weekEnd)
+        }
         completion(Timeline(entries: [entry], policy: .after(refresh)))
+    }
+
+    /// Gallery-only examples. Never persisted or shown as a real user's stats.
+    private func previewEntry() -> HeartableTimelineEntry {
+        let now = Date()
+        let week = Calendar.current.dateInterval(of: .weekOfYear, for: now)!
+        return HeartableTimelineEntry(date: now, snapshot: HeartableWidgetSnapshot(
+            version: HeartableWidgetSnapshot.currentVersion,
+            generatedAt: now,
+            weeklyRecap: WidgetWeeklyRecapSnapshot(
+                weekStart: week.start, weekEnd: week.end, playCount: 128,
+                estimatedListeningMilliseconds: 25_200_000,
+                topTrackTitle: "Space Song", topTrackArtist: "Beach House",
+                topArtistName: "Beach House"
+            ),
+            friendActivity: [
+                WidgetFriendActivitySnapshot(id: UUID(), friendName: "Alex",
+                    trackTitle: "Pink + White", artist: "Frank Ocean",
+                    playedAt: now.addingTimeInterval(-240)),
+                WidgetFriendActivitySnapshot(id: UUID(), friendName: "Sam",
+                    trackTitle: "Dreams", artist: "Fleetwood Mac",
+                    playedAt: now.addingTimeInterval(-720))
+            ]
+        ))
     }
 }
 
@@ -47,6 +80,8 @@ struct WeeklyRecapWidget: Widget {
             provider: HeartableTimelineProvider()
         ) { entry in
             WeeklyRecapWidgetView(entry: entry)
+                .widgetURL(HeartableWidgetRoute.recap.url)
+                .privacySensitive()
                 .containerBackground(for: .widget) {
                     HeartableWidgetPalette.paper
                 }
@@ -92,7 +127,7 @@ private struct WeeklyRecapWidgetView: View {
                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
                 .foregroundStyle(HeartableWidgetPalette.cocoa)
                 .minimumScaleFactor(0.75)
-            Text(recap.playCount == 1 ? "qualified play" : "qualified plays")
+            Text(recap.playCount == 1 ? "play" : "plays")
                 .font(.caption)
                 .foregroundStyle(HeartableWidgetPalette.cocoaSecondary)
             if let title = recap.topTrackTitle {
@@ -238,6 +273,7 @@ struct FriendActivityWidget: Widget {
             provider: HeartableTimelineProvider()
         ) { entry in
             FriendActivityWidgetView(entry: entry)
+                .widgetURL(HeartableWidgetRoute.friends.url)
                 .containerBackground(for: .widget) {
                     HeartableWidgetPalette.paper
                 }
@@ -270,7 +306,7 @@ private struct FriendActivityWidgetView: View {
 
             if activity.isEmpty {
                 Spacer(minLength: 0)
-                Text("Recent friend plays will show here.")
+                Text("No recent friend plays.")
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(HeartableWidgetPalette.cocoa)
                     .lineLimit(3)
@@ -322,11 +358,99 @@ private struct FriendActivityWidgetView: View {
 }
 
 private enum HeartableWidgetPalette {
-    static let paper = Color(red: 1.0, green: 244 / 255, blue: 239 / 255)
-    static let cocoa = Color(red: 67 / 255, green: 43 / 255, blue: 43 / 255)
+    static let paper = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.12, green: 0.09, blue: 0.09, alpha: 1)
+            : UIColor(red: 1, green: 244.0 / 255, blue: 239.0 / 255, alpha: 1)
+    })
+    static let cocoa = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0.98, green: 0.91, blue: 0.87, alpha: 1)
+            : UIColor(red: 67.0 / 255, green: 43.0 / 255, blue: 43.0 / 255, alpha: 1)
+    })
     static let cocoaSecondary = cocoa.opacity(0.70)
     static let brown = Color(red: 140 / 255, green: 90 / 255, blue: 80 / 255)
     static let pink = Color(red: 232 / 255, green: 69 / 255, blue: 124 / 255)
+}
+
+struct QuickAccessWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(
+            kind: WidgetSnapshotStore.quickAccessWidgetKind,
+            provider: HeartableTimelineProvider()
+        ) { _ in
+            QuickAccessWidgetView()
+                .containerBackground(HeartableWidgetPalette.paper, for: .widget)
+        }
+        .configurationDisplayName("Heartable Shortcuts")
+        .description("Open your library, friends, or playlist backups.")
+        .supportedFamilies([.systemSmall, .systemMedium, .accessoryCircular])
+    }
+}
+
+private struct QuickAccessWidgetView: View {
+    @Environment(\.widgetFamily) private var family
+
+    var body: some View {
+        if family == .accessoryCircular {
+            Image(systemName: "heart.fill")
+                .widgetAccentable()
+                .widgetURL(HeartableWidgetRoute.library.url)
+                .accessibilityLabel("Open Heartable library")
+        } else if family == .systemSmall {
+            VStack(alignment: .leading, spacing: 8) {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 40))
+                    .foregroundStyle(HeartableWidgetPalette.pink)
+                    .widgetAccentable()
+                Spacer(minLength: 0)
+                Text("Heartable")
+                    .font(.system(.title3, design: .serif, weight: .bold))
+                HStack {
+                    Text("Your library").font(.caption)
+                    Spacer(minLength: 0)
+                    Image(systemName: "arrow.up.right").font(.caption.weight(.semibold))
+                }
+            }
+            .foregroundStyle(HeartableWidgetPalette.cocoa)
+            .widgetURL(HeartableWidgetRoute.library.url)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Open Heartable library")
+        } else {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(spacing: 6) {
+                    Image(systemName: "heart.fill")
+                        .foregroundStyle(HeartableWidgetPalette.pink)
+                    Text("Heartable")
+                        .font(.system(.headline, design: .serif))
+                }
+                HStack(spacing: 12) {
+                    shortcut(.library, "Library", "music.note.house.fill")
+                    shortcut(.friends, "Friends", "person.2.fill")
+                    shortcut(.backups, "Backups", "externaldrive.fill")
+                }
+            }
+            .foregroundStyle(HeartableWidgetPalette.cocoa)
+        }
+    }
+
+    private func shortcut(_ route: HeartableWidgetRoute, _ title: String, _ icon: String) -> some View {
+        Link(destination: route.url) {
+            VStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundStyle(HeartableWidgetPalette.pink)
+                    .widgetAccentable()
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity, minHeight: 68)
+            .background(HeartableWidgetPalette.brown.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+        }
+        .accessibilityLabel("Open \(title)")
+    }
 }
 
 private enum WeeklyRecapWidgetFormatting {

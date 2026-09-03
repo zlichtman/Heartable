@@ -25,6 +25,7 @@
 		1CD3463D28829F920A054500 /* TopTracksRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = A91923113F2E29A4061F18D0 /* TopTracksRepository.swift */; };
 		1DA07A391EEAA188F31A8133 /* MixcloudProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA50620D1268B1276A4F5E68 /* MixcloudProvider.swift */; };
 		1E259C7DDBE598FA75D9E283 /* ArtistDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CEC79270D9E5A85DBFFE074 /* ArtistDetailView.swift */; };
+		1FEDD8362A73A9F504B52DD3 /* WidgetLinks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EFF2FA83C936005A602AB1D /* WidgetLinks.swift */; };
 		24A8C1E0E68A697B0AEEB121 /* NavigationSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20A89B899317029E5280F24D /* NavigationSettingsView.swift */; };
 		24B4C467577D995EA168F10B /* Visualizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C4DEAE7C67599F15545DB21 /* Visualizer.swift */; };
 		251165D386F888FCCA3338F1 /* ProviderCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2284DD9F6703C10F7D93D156 /* ProviderCatalog.swift */; };
@@ -41,12 +42,15 @@
 		318793184E29E4DE274A5814 /* AudioSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EA785F010E1EE4ABF432465 /* AudioSettings.swift */; };
 		322EA361DACCCFAD4F7722D9 /* MixtapesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C1A4D870C415D1A259BB708 /* MixtapesView.swift */; };
 		346CC2269704C8D41F36F3C0 /* RGBAColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85267AF1C3DF2D2B9DAF8AAC /* RGBAColor.swift */; };
+		34DEB525CE9515A8997643F6 /* HeartableWidgetRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54DF502B6AF082C61B9136DE /* HeartableWidgetRoute.swift */; };
 		3A74AA2C71FC62F152BA5676 /* DMSans_400Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 3A4A0517C279101331BB1E79 /* DMSans_400Regular.ttf */; };
 		3AD1AB006A19719D45B36E3C /* CSVImportParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC5D8C6B0B867D6E76E7DB9A /* CSVImportParserTests.swift */; };
 		3D266DF2A72AA2E3D54A5A9F /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25C8E70DB1E8A1042C8BD076 /* ProfileView.swift */; };
 		3DB9DF6F7D866EF17D748678 /* LocalNotifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6474B1228941D06864FBF2D /* LocalNotifier.swift */; };
 		3FE3541C0075CB46B1F7CB5F /* HeartableWidgetExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 0289529F3B68758F7F30A06C /* HeartableWidgetExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		40C296066747B336D6B3F393 /* LibrarySessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABA64CD56C1C2C8FD5E7E747 /* LibrarySessionStore.swift */; };
+		4261BB26D033C62224FF9509 /* PlaylistCoverBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCD0C58FC72205B9069A3B98 /* PlaylistCoverBrowser.swift */; };
+		43D75B298B56DE4AC856B7B5 /* HeartablePageHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C56A1AD201C1BC852B64D86 /* HeartablePageHeader.swift */; };
 		4601D586037FA033EC487C43 /* ProfilePhotoCameraPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 933CD95867896B63D9154BD1 /* ProfilePhotoCameraPicker.swift */; };
 		473B0BBE51ACFEAA13749398 /* ThemeEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 531A941E04AFF80DF9B42641 /* ThemeEditorView.swift */; };
 		47DCE9B3F5EE0A66689DBA60 /* WeeklyRecapBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37BD0633EF6066ADFB3CFF19 /* WeeklyRecapBuilder.swift */; };
@@ -61,6 +65,7 @@
 		5D239FAD7B8BB9ED0F3F420E /* DMSans_600SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E673B2646B4446139B6ABF96 /* DMSans_600SemiBold.ttf */; };
 		5D5B7BBCB81FD4939A7EBEB7 /* BackupSnapshotDifferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4C79B34593FA538C8141AE /* BackupSnapshotDifferTests.swift */; };
 		5DCB47900B5A0BFEAB11ECE2 /* MasterLibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08158489F86385193980C434 /* MasterLibraryStore.swift */; };
+		61049B40375059F53BE8D8B5 /* BackupArtworkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D33F5D5BCB59D83C88DC9F38 /* BackupArtworkTests.swift */; };
 		61532AEBA265B5D5706A5689 /* DiscoverStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA98C7551D3037E79563A2B1 /* DiscoverStore.swift */; };
 		62098C9673473D4905F77E31 /* MeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33206A79A4AC2DD386FED30D /* MeStore.swift */; };
 		62180DB70D2019511D43DDC5 /* HTTPClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A60B92C24498719D81EEA14B /* HTTPClient.swift */; };
@@ -98,6 +103,7 @@
 		951F0B990E942B483513E890 /* SnapshotImport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97F7C23E74D57F47B707C549 /* SnapshotImport.swift */; };
 		9673F152039528CE0E188099 /* StatRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55C7030C90B87D8A05621EE4 /* StatRange.swift */; };
 		96BFEBF5AC01A384AF6CDB7F /* AccountIsolationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA64C49483E085BF5E4444AD /* AccountIsolationTests.swift */; };
+		971ECF2D251EFC5F7820B750 /* AppTabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A219F1F95C566D31F01E9981 /* AppTabTests.swift */; };
 		976AF94DDA1E7D2A9F760977 /* DMSans_500Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = FA4C14DFBC61DC7AA980A266 /* DMSans_500Medium.ttf */; };
 		97F28E88E485404707670829 /* AppleMusicProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A49AEBA45246B6299830E0E3 /* AppleMusicProvider.swift */; };
 		98CFF07F4FE4DB9B051ACBF8 /* FriendProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11E4F45FD5279740BB493B5 /* FriendProfileView.swift */; };
@@ -119,6 +125,8 @@
 		AECC6B5C2DDF70985BFF45DA /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FDA91DA7F051584FB0A5AE5F /* ChatStore.swift */; };
 		B03EC4D7F632D0ED916E1AE4 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96C5FC758DC6C1ADA2964570 /* OnboardingView.swift */; };
 		B1485EDCF7AED1DF30466E1A /* LibrarySessionStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B2C856797865BB2D09B3CF /* LibrarySessionStoreTests.swift */; };
+		B167DE1241C56BC817A97C15 /* PlaylistRotation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BB39BD01CEBFEE9956B058C /* PlaylistRotation.swift */; };
+		B22CDB0901CA8C43CCE3D546 /* HeartableWidgetRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54DF502B6AF082C61B9136DE /* HeartableWidgetRoute.swift */; };
 		B2C5718729CDEB70633F06A9 /* TopTracksSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EB66BDF3032036FCF3CF104 /* TopTracksSource.swift */; };
 		B433A8C9FBE99E5ECD0FE836 /* ProviderRegistry.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29E2EA88A31618A3A18EB6C0 /* ProviderRegistry.swift */; };
 		B604614DEF6EC2F2DD76E7CA /* SpotifyTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26A6D78AAD78A9C51991BF6A /* SpotifyTransport.swift */; };
@@ -215,6 +223,7 @@
 		0A024CFFA38C60080D641DC6 /* ChatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatsView.swift; sourceTree = "<group>"; };
 		0A8E8B2D5CC1517C937234AF /* AppTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTab.swift; sourceTree = "<group>"; };
 		0EB66BDF3032036FCF3CF104 /* TopTracksSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopTracksSource.swift; sourceTree = "<group>"; };
+		0EFF2FA83C936005A602AB1D /* WidgetLinks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetLinks.swift; sourceTree = "<group>"; };
 		0F81482D183140C30D4ACDDC /* SpotifyFailureRetentionWindowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyFailureRetentionWindowTests.swift; sourceTree = "<group>"; };
 		0FC6A10BC97D8EA9E0BFA041 /* JellyfinProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JellyfinProvider.swift; sourceTree = "<group>"; };
 		11BC9CD7EF85684D0F5B49B8 /* FolderDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FolderDetailView.swift; sourceTree = "<group>"; };
@@ -264,6 +273,7 @@
 		50DCC752A4C58D1501FADA84 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		512B181B9862F4F4FAFDD78D /* UnifiedTrackIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedTrackIdentityTests.swift; sourceTree = "<group>"; };
 		531A941E04AFF80DF9B42641 /* ThemeEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeEditorView.swift; sourceTree = "<group>"; };
+		54DF502B6AF082C61B9136DE /* HeartableWidgetRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartableWidgetRoute.swift; sourceTree = "<group>"; };
 		55C7030C90B87D8A05621EE4 /* StatRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatRange.swift; sourceTree = "<group>"; };
 		55DFE48D7DCDD67AF3EB83D7 /* MasterTrack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasterTrack.swift; sourceTree = "<group>"; };
 		562526DED880161A1EC56C1E /* SpotifyProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotifyProvider.swift; sourceTree = "<group>"; };
@@ -271,6 +281,7 @@
 		58A9050EE987CC3EEEACBB61 /* AuthStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthStore.swift; sourceTree = "<group>"; };
 		58B2C856797865BB2D09B3CF /* LibrarySessionStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibrarySessionStoreTests.swift; sourceTree = "<group>"; };
 		5B98758A4C2C3FE28D8B722E /* Shuffle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shuffle.swift; sourceTree = "<group>"; };
+		5BB39BD01CEBFEE9956B058C /* PlaylistRotation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistRotation.swift; sourceTree = "<group>"; };
 		5C4DEAE7C67599F15545DB21 /* Visualizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Visualizer.swift; sourceTree = "<group>"; };
 		60AA9CFF3DDB735AF422D92B /* PlaylistTracksRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistTracksRepository.swift; sourceTree = "<group>"; };
 		61EEB0D2E65D31CA3AFC770D /* PaletteBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaletteBuilder.swift; sourceTree = "<group>"; };
@@ -278,6 +289,7 @@
 		64231141B9E9774BD8D3CE1D /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		65C0F7E47D3C7766176E0A0E /* ProvidersStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProvidersStore.swift; sourceTree = "<group>"; };
 		6ABC8C410B5955BCEF2D1C35 /* Lyrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Lyrics.swift; sourceTree = "<group>"; };
+		6C56A1AD201C1BC852B64D86 /* HeartablePageHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartablePageHeader.swift; sourceTree = "<group>"; };
 		6CE1C2096EE1FC7E4F4EEFEC /* CoverArt.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoverArt.swift; sourceTree = "<group>"; };
 		740ED112ADA8DF47B5698489 /* WidgetSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetSnapshotTests.swift; sourceTree = "<group>"; };
 		74CC48BAD53884C421923319 /* PlaybackPrefsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackPrefsStore.swift; sourceTree = "<group>"; };
@@ -309,6 +321,7 @@
 		9E157AECA964222D618C67E9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9E65612D713F082FA5EE8EC3 /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
 		9F6AF405B4A415122BA81FE7 /* WeeklyRecapStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyRecapStore.swift; sourceTree = "<group>"; };
+		A219F1F95C566D31F01E9981 /* AppTabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTabTests.swift; sourceTree = "<group>"; };
 		A21DD7592CB24944F05E8C27 /* ProviderBadge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderBadge.swift; sourceTree = "<group>"; };
 		A49AEBA45246B6299830E0E3 /* AppleMusicProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleMusicProvider.swift; sourceTree = "<group>"; };
 		A4FD2534BAE6EB607E2A9D2C /* UnifiedTrackIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedTrackIdentity.swift; sourceTree = "<group>"; };
@@ -337,9 +350,11 @@
 		C866F5A71F2D23706D6EB9F7 /* HeartableModalComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartableModalComponents.swift; sourceTree = "<group>"; };
 		CC688710344831E3031F8757 /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
 		CC8325D978BE1ABA4652BC87 /* AppleSignIn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleSignIn.swift; sourceTree = "<group>"; };
+		CCD0C58FC72205B9069A3B98 /* PlaylistCoverBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistCoverBrowser.swift; sourceTree = "<group>"; };
 		CF792154BF3CEE3CC5048C55 /* HeartableApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartableApp.swift; sourceTree = "<group>"; };
 		D24DC5B96BF927808116BD55 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		D30B10C1B4D5A472CCAD2468 /* WeeklyRecapArchiveStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeeklyRecapArchiveStore.swift; sourceTree = "<group>"; };
+		D33F5D5BCB59D83C88DC9F38 /* BackupArtworkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupArtworkTests.swift; sourceTree = "<group>"; };
 		D3B47440F0FD6BC9A18297AE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		DA50620D1268B1276A4F5E68 /* MixcloudProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixcloudProvider.swift; sourceTree = "<group>"; };
 		DB527D97A87DE283A588B7F6 /* UnifiedTrackRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnifiedTrackRow.swift; sourceTree = "<group>"; };
@@ -409,9 +424,11 @@
 				0A8E8B2D5CC1517C937234AF /* AppTab.swift */,
 				DE3507A51E272748C9555BF9 /* AppTabView.swift */,
 				CF792154BF3CEE3CC5048C55 /* HeartableApp.swift */,
+				5BB39BD01CEBFEE9956B058C /* PlaylistRotation.swift */,
 				0296C441D7F7FCFD9C3284E5 /* PresentationAnchorResolver.swift */,
 				62D80B52C115598AC67374EE /* RootView.swift */,
 				09F7334F82772A9CEFEDEE90 /* RuntimeConfiguration.swift */,
+				0EFF2FA83C936005A602AB1D /* WidgetLinks.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -556,6 +573,7 @@
 		7B62221DBB770D3D49F03E21 /* Shared */ = {
 			isa = PBXGroup;
 			children = (
+				54DF502B6AF082C61B9136DE /* HeartableWidgetRoute.swift */,
 				C1D0E8A3ECDA4CB02F5602F2 /* HeartableWidgetSnapshot.swift */,
 			);
 			path = Shared;
@@ -588,6 +606,7 @@
 				2D3269CB1B80F07F2ED6F70F /* LibraryStore.swift */,
 				EA2C06632FA16164453F5A3D /* LibraryView.swift */,
 				9CF141D71981500B1C2708FE /* LikedSongsView.swift */,
+				CCD0C58FC72205B9069A3B98 /* PlaylistCoverBrowser.swift */,
 				9963A42D323613CD16D9BA58 /* PlaylistDetailView.swift */,
 			);
 			path = Library;
@@ -725,7 +744,9 @@
 			children = (
 				FA64C49483E085BF5E4444AD /* AccountIsolationTests.swift */,
 				BDD2E9B5CF8F1321485133D1 /* AppIconCatalogTests.swift */,
+				A219F1F95C566D31F01E9981 /* AppTabTests.swift */,
 				4947D01A0C1321BF2B932AB7 /* ArtworkDiskCacheTests.swift */,
+				D33F5D5BCB59D83C88DC9F38 /* BackupArtworkTests.swift */,
 				FB4C79B34593FA538C8141AE /* BackupSnapshotDifferTests.swift */,
 				FC5D8C6B0B867D6E76E7DB9A /* CSVImportParserTests.swift */,
 				75CDE8C04C5C48C66122D9C9 /* FriendProfileMusicConnectionTests.swift */,
@@ -781,6 +802,7 @@
 				6CE1C2096EE1FC7E4F4EEFEC /* CoverArt.swift */,
 				C866F5A71F2D23706D6EB9F7 /* HeartableModalComponents.swift */,
 				F53493A79902C6A6A2B61A9C /* HeartableNavigationButton.swift */,
+				6C56A1AD201C1BC852B64D86 /* HeartablePageHeader.swift */,
 				3F883CEFDBB5D21AEB434768 /* NowPlayingStrip.swift */,
 				4A2216E6CF25339DC0885F77 /* PlaybackModeControl.swift */,
 				4532E35D0BB2859D7954ECCF /* ProfileStatTile.swift */,
@@ -956,6 +978,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				552CC476089D0929E4A5C489 /* HeartableWidgetBundle.swift in Sources */,
+				B22CDB0901CA8C43CCE3D546 /* HeartableWidgetRoute.swift in Sources */,
 				836EF3F60E72F41FA63F5DAE /* HeartableWidgetSnapshot.swift in Sources */,
 				F56CFBF376696482658AAB12 /* HeartableWidgets.swift in Sources */,
 			);
@@ -967,7 +990,9 @@
 			files = (
 				96BFEBF5AC01A384AF6CDB7F /* AccountIsolationTests.swift in Sources */,
 				05A2B611E153F9972D6994E6 /* AppIconCatalogTests.swift in Sources */,
+				971ECF2D251EFC5F7820B750 /* AppTabTests.swift in Sources */,
 				151D0DE3DDF33B424FA036F7 /* ArtworkDiskCacheTests.swift in Sources */,
+				61049B40375059F53BE8D8B5 /* BackupArtworkTests.swift in Sources */,
 				5D5B7BBCB81FD4939A7EBEB7 /* BackupSnapshotDifferTests.swift in Sources */,
 				3AD1AB006A19719D45B36E3C /* CSVImportParserTests.swift in Sources */,
 				DF4F5D27AD04A5AFA8CD37B7 /* FriendProfileMusicConnectionTests.swift in Sources */,
@@ -1033,6 +1058,8 @@
 				70EE545304BE10A98D6F8705 /* HeartableApp.swift in Sources */,
 				65023DB52E031C698B55C90F /* HeartableModalComponents.swift in Sources */,
 				C61A48B90CB8F715ADE0EAA4 /* HeartableNavigationButton.swift in Sources */,
+				43D75B298B56DE4AC856B7B5 /* HeartablePageHeader.swift in Sources */,
+				34DEB525CE9515A8997643F6 /* HeartableWidgetRoute.swift in Sources */,
 				C2CD21FE07328ED0571E364F /* HeartableWidgetSnapshot.swift in Sources */,
 				873109ED9F716C2665071677 /* InternetArchiveProvider.swift in Sources */,
 				01E495E9EA50BDAFE67A58B8 /* JellyfinConnectSheet.swift in Sources */,
@@ -1074,7 +1101,9 @@
 				A71EB9CAFB65D25BB4FBBFEA /* PlaybackModeControl.swift in Sources */,
 				F2F0E7FD244904729527E1A1 /* PlaybackPrefsStore.swift in Sources */,
 				E7E491DCEA5A53C7DE7EBD9F /* PlayerStore.swift in Sources */,
+				4261BB26D033C62224FF9509 /* PlaylistCoverBrowser.swift in Sources */,
 				FE6AAAE657CC2912AD30A9AD /* PlaylistDetailView.swift in Sources */,
+				B167DE1241C56BC817A97C15 /* PlaylistRotation.swift in Sources */,
 				7AFEFD6094E5C543C4DB0F46 /* PlaylistTracksRepository.swift in Sources */,
 				ED9DF825FF526291B3E83D89 /* PlexProvider.swift in Sources */,
 				A7C814409348AFA5E4566586 /* PresentationAnchorResolver.swift in Sources */,
@@ -1120,6 +1149,7 @@
 				47DCE9B3F5EE0A66689DBA60 /* WeeklyRecapBuilder.swift in Sources */,
 				9F6C69A42DEB3642B0E88BC6 /* WeeklyRecapStore.swift in Sources */,
 				F1D27C9AEBEAC66644B2CA6A /* WeeklyRecapView.swift in Sources */,
+				1FEDD8362A73A9F504B52DD3 /* WidgetLinks.swift in Sources */,
 				D7FF7E2A0C4E9CD273386516 /* WidgetSnapshotPublisher.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -1212,7 +1242,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 45;
+				CURRENT_PROJECT_VERSION = 46;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 28LJG7MXT3;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -1336,7 +1366,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 45;
+				CURRENT_PROJECT_VERSION = 46;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 28LJG7MXT3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

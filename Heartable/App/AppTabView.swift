@@ -14,6 +14,7 @@ struct AppTabView: View {
     @Environment(SkipStore.self) private var skips
     @Environment(PlaybackEngine.self) private var engine
     @Environment(FriendLinks.self) private var friendLinks
+    @Environment(WidgetLinks.self) private var widgetLinks
     @Environment(BannerCenter.self) private var banners
     @Environment(WeeklyRecapStore.self) private var weeklyRecap
     @Environment(LibrarySessionStore.self) private var librarySession
@@ -24,6 +25,7 @@ struct AppTabView: View {
 
     @State private var selected: AppTab = .library
     @State private var showFullPlayer = false
+    @State private var friendsWidgetRequest: UUID?
 
     // One navigation path per tab that pushes detail screens, so re-tapping the
     // active tab pops it back to its main page.
@@ -116,11 +118,31 @@ struct AppTabView: View {
             discoverPath = NavigationPath()
             discoverPath.append(AddFriendRoute())
         }
+        .onChange(of: widgetLinks.requestID, initial: true) {
+            guard let route = widgetLinks.take() else { return }
+            showFullPlayer = false
+            switch route {
+            case .library:
+                selected = .library
+                libraryPath = NavigationPath()
+            case .friends:
+                selected = .discover
+                discoverPath = NavigationPath()
+                friendsWidgetRequest = widgetLinks.requestID
+            case .backups:
+                selected = .backups
+            case .recap:
+                selected = .profile
+                profilePath = NavigationPath()
+                profilePath.append(HeartableWidgetRoute.recap)
+            }
+        }
         // FriendLinks lives above the authenticated shell so links received on
         // the sign-in screen can survive into the app. Clear any unconsumed link
         // when this account's keyed shell is actually removed.
         .onDisappear {
             friendLinks.resetForAccountTransition()
+            widgetLinks.reset()
         }
         .onChange(of: player.feedbackID) {
             guard let message = player.feedbackMessage else { return }
@@ -161,7 +183,7 @@ struct AppTabView: View {
     private var tabs: some View {
         TabView(selection: selection) {
             Tab(value: .discover) {
-                DiscoverView(navPath: $discoverPath)
+                DiscoverView(navPath: $discoverPath, friendsRequestID: friendsWidgetRequest)
             } label: {
                 tabLabel(.discover)
             }

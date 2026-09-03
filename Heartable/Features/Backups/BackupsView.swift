@@ -63,7 +63,7 @@ struct BackupsView: View {
             VStack(spacing: 0) {
                 header
                     .padding(.horizontal, 16)
-                    .padding(.top, 6)
+                    .padding(.top, 8)
                     .padding(.bottom, 14)
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 16) {
@@ -156,15 +156,7 @@ struct BackupsView: View {
     // MARK: - Header
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Backups")
-                .font(Typography.heading(32))
-                .foregroundStyle(theme.palette.text)
-            Text("Protect your library and restore it when you need it.")
-                .font(Typography.body(14))
-                .foregroundStyle(theme.palette.textSecondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        HeartablePageHeader(tab: .backups)
     }
 
     // MARK: - Overview + preferences
@@ -705,7 +697,8 @@ struct BackupsView: View {
                         contentRow(
                             icon: "music.note.list",
                             title: pl.name?.isEmpty == false ? pl.name! : "Untitled playlist",
-                            count: pl.trackCount ?? 0
+                            count: pl.trackCount ?? 0,
+                            imageURL: pl.imageUrl.flatMap(URL.init(string:))
                         )
                     }
                     .buttonStyle(.plain)
@@ -717,13 +710,9 @@ struct BackupsView: View {
         .background(theme.palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
 
-    private func contentRow(icon: String, title: String, count: Int) -> some View {
+    private func contentRow(icon: String, title: String, count: Int, imageURL: URL? = nil) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(theme.palette.rose)
-                .frame(width: 30, height: 30)
-                .background(theme.palette.roseDim, in: RoundedRectangle(cornerRadius: 8))
+            CoverArt(url: imageURL, size: 44, corner: 9, placeholder: icon)
 
             Text(title)
                 .font(Typography.medium(13))
@@ -1504,7 +1493,7 @@ private struct BackupContentsView: View {
 
     private var collectionSummary: some View {
         HStack(spacing: 14) {
-            if let imageURL = selection.imageURL {
+            if let imageURL = selection.imageURL ?? tracks.compactMap(\.artworkURL).first {
                 CoverArt(
                     url: imageURL,
                     size: 68,
@@ -1642,6 +1631,11 @@ private struct BackupActionsSheet: View {
     let onDelete: () -> Void
 
     var body: some View {
+        HeartableDrawer { content }
+            .accessibilityAction(.escape, onClose)
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -1653,11 +1647,6 @@ private struct BackupActionsSheet: View {
                         .foregroundStyle(theme.palette.textSecondary)
                 }
                 Spacer(minLength: 8)
-                HeartableSheetDismissButton(
-                    accessibilityLabel: "Dismiss backup actions",
-                    drawsSurface: true,
-                    action: onClose
-                )
             }
 
             VStack(spacing: 9) {
@@ -1698,8 +1687,6 @@ private struct BackupActionsSheet: View {
         .padding(.bottom, 22)
         .frame(maxWidth: .infinity, alignment: .top)
         .background(theme.palette.bg.ignoresSafeArea())
-        .presentationSizing(.fitted)
-        .heartableSheetChrome()
         .accessibilityAction(.escape, onClose)
     }
 
@@ -1761,13 +1748,13 @@ private enum BackupFrequency: String, CaseIterable, Identifiable {
 // MARK: - CSV export document
 
 /// A `Transferable` CSV built from a snapshot's tracks. Fetched lazily when the
-/// share sheet asks for the data. Columns: playlist,name,artist,album,uri.
+/// share sheet asks for the data. Optional artwork columns survive re-import.
 ///
 /// The export writes every playlist's tracks, then appends liked songs with an
 /// empty `playlist` column. That empty column is the documented liked-song marker
 /// the importer reads (rows with no playlist → `snapshot_liked_tracks`), so an
 /// exported CSV round-trips back into liked songs on re-import.
-private struct CSVDocument: Transferable {
+struct CSVDocument: Transferable {
     let snapshot: LibrarySnapshotDTO
 
     /// One CSV line: the source playlist name plus the track fields.
@@ -1777,6 +1764,9 @@ private struct CSVDocument: Transferable {
         let artist: String?
         let album: String?
         let uri: String
+        var albumArtURL: String? = nil
+        var playlistImageURL: String? = nil
+        var durationMS: Int? = nil
     }
 
     static var transferRepresentation: some TransferRepresentation {
@@ -1799,10 +1789,12 @@ private struct CSVDocument: Transferable {
         let playlists = await playlistsFetch
         let playlistRows = await fetchPlaylistRows(playlists, maxConcurrent: 6)
         var rows: [Row] = []
-        for (_, label, tracks) in playlistRows.sorted(by: { $0.0 < $1.0 }) {
+        for (index, label, tracks) in playlistRows.sorted(by: { $0.0 < $1.0 }) {
             for t in tracks {
                 rows.append(Row(playlist: label, name: t.trackName, artist: t.artistName,
-                                album: t.albumName, uri: t.spotifyTrackUri))
+                                album: t.albumName, uri: t.spotifyTrackUri,
+                                albumArtURL: t.albumArtUrl, playlistImageURL: playlists[index].imageUrl,
+                                durationMS: t.durationMs))
             }
         }
         // Always include liked songs with an empty playlist column (the importer's
@@ -1810,7 +1802,8 @@ private struct CSVDocument: Transferable {
         let liked = await likedFetch
         for t in liked {
             rows.append(Row(playlist: "", name: t.trackName, artist: t.artistName,
-                            album: t.albumName, uri: t.spotifyTrackUri))
+                            album: t.albumName, uri: t.spotifyTrackUri,
+                            albumArtURL: t.albumArtUrl, durationMS: t.durationMs))
         }
         return rows
     }
@@ -1854,7 +1847,7 @@ private struct CSVDocument: Transferable {
     }
 
     static func csv(from rows: [Row]) -> String {
-        var lines = ["playlist,name,artist,album,uri"]
+        var lines = ["playlist,name,artist,album,uri,album_art_url,playlist_image_url,duration_ms"]
         for r in rows {
             lines.append([
                 escape(r.playlist),
@@ -1862,6 +1855,9 @@ private struct CSVDocument: Transferable {
                 escape(r.artist),
                 escape(r.album),
                 escape(r.uri),
+                escape(r.albumArtURL),
+                escape(r.playlistImageURL),
+                r.durationMS.map(String.init) ?? "",
             ].joined(separator: ","))
         }
         return lines.joined(separator: "\n")

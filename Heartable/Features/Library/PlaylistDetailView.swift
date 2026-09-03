@@ -23,6 +23,9 @@ struct PlaylistDetailView: View {
     @State private var sort: TrackSort = .original
     @State private var sortReversed = false
     @State private var showingSortOptions = false
+    @State private var rotationID = UUID()
+    @State private var isLandscape = false
+    @State private var coverSelection: Int? = 0
 
     private var tracks: [UnifiedTrack] {
         playlistTracks.tracks(for: playlist)
@@ -90,6 +93,28 @@ struct PlaylistDetailView: View {
     }
 
     var body: some View {
+        ZStack {
+            // Retain the list in the hierarchy so rotation cannot lose its
+            // scroll position, sort selection, or cache-backed load task.
+            trackList
+                .opacity(isLandscape && !tracks.isEmpty ? 0 : 1)
+                .allowsHitTesting(!isLandscape || tracks.isEmpty)
+                .accessibilityHidden(isLandscape && !tracks.isEmpty)
+            if isLandscape && !tracks.isEmpty {
+                PlaylistCoverBrowser(tracks: displayedTracks, selection: $coverSelection)
+            }
+        }
+        .onGeometryChange(for: Bool.self) { geometry in
+            geometry.size.width > geometry.size.height
+        } action: { landscape in
+            isLandscape = landscape
+            if landscape { showingSortOptions = false }
+        }
+        .onAppear { PlaylistRotation.setVisible(true, id: rotationID) }
+        .onDisappear { PlaylistRotation.setVisible(false, id: rotationID) }
+    }
+
+    private var trackList: some View {
         List {
             Section {
                 // The hero is the first scrolling row (not a pinned section
@@ -171,7 +196,7 @@ struct PlaylistDetailView: View {
                     .font(Typography.semibold(15))
                     .foregroundStyle(theme.palette.text)
                     .lineLimit(1)
-                    .opacity(showBarTitle ? 1 : 0)
+                    .opacity(showBarTitle || isLandscape ? 1 : 0)
                     .animation(.easeInOut(duration: 0.18), value: showBarTitle)
             }
         }

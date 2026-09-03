@@ -31,7 +31,6 @@ struct PlaybackModeControl: View {
         .sheet(isPresented: $showingModes) {
             HeartableChoiceSheet(
                 title: "Playback mode",
-                subtitle: prefs.mode.caption,
                 items: ShuffleMode.allCases.map { mode in
                     HeartableChoiceItem(
                         id: mode.rawValue,

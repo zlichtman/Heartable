@@ -28,7 +28,7 @@ name.
 ## Current release
 
 - Marketing version: **1.0.0**
-- Build: **44**
+- Build: **46**
 - Minimum OS: **iOS 26**
 - Toolchain: **Swift 6**, SwiftUI, XcodeGen, Swift Package Manager
 - Backend: **Supabase**
@@ -52,7 +52,7 @@ Heartable/
     Recap/             weekly listening recap and archive
     Social/            listening activity and friend sync
   Shared/              app/widget shared snapshot models
-HeartableWidget/       secret-free recap and friend-activity widgets
+HeartableWidget/       recap, friend activity, and quick-access widgets
 HeartableTests/        domain and regression tests
 supabase/migrations/   ordered backend contracts
 ci_scripts/            Xcode Cloud bootstrap
@@ -62,6 +62,17 @@ Tools/                 reproducible asset tooling
 `project.yml` is the source of truth for targets and build settings. The
 generated `Heartable.xcodeproj` is committed so Xcode Cloud can build without a
 project-generation dependency.
+
+Build 46 adds landscape song-cover browsing inside playlists, compact themed
+option drawers, shared root-page headers, and backup artwork preservation
+(including CSV round trips). Existing backups without saved artwork retain
+placeholders; new captures preserve the provider's cover URLs.
+
+Home Screen widgets include Weekly Recap, Friends Listening, and Heartable
+Shortcuts. Weekly Recap also supports the rectangular Lock Screen slot;
+Shortcuts supports a circular Lock Screen slot. Add them through iOS's widget
+gallery after opening Heartable once. Widget taps route into the relevant app
+screen; they do not attempt background provider playback.
 
 Account-owned state is namespaced by the Supabase user. Provider pairing intent
 is stored in an RLS-protected account manifest, while provider secrets remain in
