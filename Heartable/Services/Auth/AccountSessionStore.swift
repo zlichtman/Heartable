@@ -11,6 +11,7 @@ import Foundation
 enum AccountSessionStore {
     private static let ownerKey = "heartable.accountSession.owner"
     static let profileCacheKey = "heartable.profile.cache.v1"
+    static let providerManifestCacheKey = "heartable.providerConnections.manifest.v1"
 
     /// Legacy unscoped provider and backup preferences migrated into the first
     /// known owner. Appearance remains device-level personalization.
@@ -29,6 +30,7 @@ enum AccountSessionStore {
         "heartable.listenbrainz.user",
         "heartable.mixcloud.enabled",
         "heartable.radioBrowser.enabled",
+        providerManifestCacheKey,
     ] + ProviderID.allCases.map { "heartable.backup.service.\($0.rawValue)" }
 
     static let providerKeychainKeys = [

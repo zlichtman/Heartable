@@ -105,6 +105,112 @@ final class AccountIsolationTests: XCTestCase {
         XCTAssertTrue(firstKey.hasSuffix(".heartable_spotify_refresh"))
     }
 
+    func testProviderManifestPrefersNewestAccountDecision() {
+        let userID = UUID()
+        let remoteConnected = ProviderConnectionDTO(
+            userId: userID,
+            providerId: ProviderID.spotify.rawValue,
+            connected: true,
+            metadata: [:],
+            connectedAt: "2026-09-01T12:00:00Z",
+            updatedAt: "2026-09-01T12:00:00Z"
+        )
+        let localDisconnected = ProviderConnectionDTO(
+            userId: userID,
+            providerId: ProviderID.spotify.rawValue,
+            connected: false,
+            metadata: [:],
+            connectedAt: nil,
+            updatedAt: "2026-09-02T12:00:00Z"
+        )
+
+        let merged = ProvidersStore.merge(
+            local: [localDisconnected],
+            remote: [remoteConnected]
+        )
+
+        XCTAssertEqual(merged.count, 1)
+        XCTAssertFalse(merged[0].connected)
+    }
+
+    func testProviderManifestLetsNewerServerPairingRestoreAfterReinstall() {
+        let userID = UUID()
+        let staleLocal = ProviderConnectionDTO(
+            userId: userID,
+            providerId: ProviderID.apple.rawValue,
+            connected: false,
+            metadata: [:],
+            connectedAt: nil,
+            updatedAt: "2026-09-01T12:00:00Z"
+        )
+        let serverPairing = ProviderConnectionDTO(
+            userId: userID,
+            providerId: ProviderID.apple.rawValue,
+            connected: true,
+            metadata: [:],
+            connectedAt: "2026-09-02T12:00:00Z",
+            updatedAt: "2026-09-02T12:00:00Z"
+        )
+
+        let merged = ProvidersStore.merge(local: [staleLocal], remote: [serverPairing])
+
+        XCTAssertTrue(merged[0].connected)
+    }
+
+    func testProviderManifestComparesEquivalentTimestampFormatsChronologically() {
+        let userID = UUID()
+        let actuallyNewer = ProviderConnectionDTO(
+            userId: userID,
+            providerId: ProviderID.spotify.rawValue,
+            connected: false,
+            metadata: [:],
+            connectedAt: nil,
+            updatedAt: "2026-09-03T12:00:00.900Z"
+        )
+        let lexicallyMisleading = ProviderConnectionDTO(
+            userId: userID,
+            providerId: ProviderID.spotify.rawValue,
+            connected: true,
+            metadata: [:],
+            connectedAt: nil,
+            updatedAt: "2026-09-03T12:00:00+00:00"
+        )
+
+        let merged = ProvidersStore.merge(
+            local: [actuallyNewer],
+            remote: [lexicallyMisleading]
+        )
+
+        XCTAssertFalse(merged[0].connected)
+    }
+
+    @MainActor
+    func testOnboardingCompletionIsCachedWithTheAccountProfile() {
+        let userID = UUID()
+        defer {
+            AccountSessionStore.removeDefault(
+                forKey: AccountSessionStore.profileCacheKey,
+                ownerID: userID
+            )
+        }
+
+        let firstStore = MeStore()
+        firstStore.markOnboardingCompleted(userID: userID)
+        XCTAssertTrue(firstStore.hasCompletedOnboarding)
+
+        let relaunchedStore = MeStore()
+        relaunchedStore.activate(userID: userID)
+        XCTAssertTrue(relaunchedStore.hasCompletedOnboarding)
+        XCTAssertTrue(relaunchedStore.hasResolvedAccount)
+    }
+
+    func testEmailNormalizationIsStableAcrossAccountActions() {
+        XCTAssertEqual(
+            AuthStore.normalizedEmail("  Zach.Lichtman@Example.COM\n"),
+            "zach.lichtman@example.com"
+        )
+    }
+
     func testFriendInviteParserAcceptsOnlyNonemptyInviteLinks() {
         XCTAssertEqual(
             FriendLinks.inviteCode(

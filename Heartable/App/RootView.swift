@@ -33,7 +33,7 @@ struct RootView: View {
 
     private var isOnboarded: Bool {
         guard let id = auth.userID?.uuidString else { return false }
-        return onboardedIDs.contains(id)
+        return onboardedIDs.contains(id) || me.hasCompletedOnboarding
     }
 
     private func markOnboarded() {
@@ -41,6 +41,8 @@ struct RootView: View {
         var ids = onboardedIDs
         ids.insert(id)
         onboardedIDsRaw = ids.sorted().joined(separator: ",")
+        me.markOnboardingCompleted(userID: auth.userID)
+        Task { try? await BackendAPI.shared.completeOnboarding() }
     }
 
     var body: some View {
@@ -52,6 +54,11 @@ struct RootView: View {
                     .transition(.opacity)
             } else if auth.session == nil {
                 AuthView()
+            } else if !me.hasResolvedAccount && !isOnboarded {
+                // A reinstall has no local onboarding marker. Resolve the account
+                // profile before deciding whether setup is needed, avoiding a
+                // one-frame flash of onboarding for an established account.
+                splash
             } else if !isOnboarded {
                 OnboardingView { markOnboarded() }
             } else {
@@ -80,30 +87,45 @@ struct RootView: View {
         // Hydrate the account-scoped cached identity before the Profile tab is
         // ever opened, then reconcile it with Supabase in the background.
         .task(id: auth.userID) {
+            // This task is the single owner of account activation. Keeping reset
+            // and bootstrap in one ordered path avoids the former `.onChange`
+            // race where a provider restore could start and then be cleared by a
+            // second lifecycle callback during the first authenticated frame.
+            resetAccountState()
             guard let userID = auth.userID else { return }
             me.activate(userID: userID)
-            await me.load(userID: userID)
-        }
-        // On any account transition, clear the shared in-memory stores so the
-        // previous account's profile, services, now-playing, and weights cannot
-        // linger into the newly mounted shell.
-        .onChange(of: auth.userID, initial: true) { oldID, newID in
-            if oldID != newID {
-                me.activate(userID: newID)
-                providers.reset()
-                player.reset()
-                nowPlayingSync.reset()
-                prefs.reset()
-                skips.reset()
-                topTracks.reset()
-                playlistTracks.reset()
-                librarySession.reset()
-                chats.reset()
-                friendActivity.reset()
-                weeklyRecap.reset()
-                WidgetSnapshotStore.clearAndReloadWidgets()
+            async let profile: Void = me.load(userID: userID)
+            async let connections: Void = providers.activate(userID: userID)
+            await profile
+            await connections
+
+            // Migrate the former per-install completion marker to the account.
+            if onboardedIDs.contains(userID.uuidString),
+               !me.hasCompletedOnboarding {
+                do {
+                    try await BackendAPI.shared.completeOnboarding()
+                    me.markOnboardingCompleted(userID: userID)
+                } catch { /* Retried on the next account activation. */ }
             }
         }
+    }
+
+    /// Clear only in-memory account state. Durable account profile/provider data
+    /// stays scoped in cache, Keychain, and Supabase for the subsequent restore.
+    private func resetAccountState() {
+        me.reset()
+        providers.reset()
+        player.reset()
+        nowPlayingSync.reset()
+        prefs.reset()
+        skips.reset()
+        topTracks.reset()
+        playlistTracks.reset()
+        librarySession.reset()
+        chats.reset()
+        friendActivity.reset()
+        weeklyRecap.reset()
+        WidgetSnapshotStore.clearAndReloadWidgets()
     }
 
     private var splash: some View {

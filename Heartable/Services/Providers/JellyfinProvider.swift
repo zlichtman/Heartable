@@ -144,6 +144,28 @@ struct JellyfinProvider: MusicProvider {
         }
     }
 
+    func connectionMetadata() async -> [String: String] {
+        var metadata: [String: String] = [:]
+        if let server = Self.storedServer { metadata["server"] = server }
+        if let username = Self.storedUsername { metadata["username"] = username }
+        if let userID = AccountSessionStore.defaultString(forKey: Self.userIDKey) {
+            metadata["user_id"] = userID
+        }
+        return metadata
+    }
+
+    func restoreConnection(metadata: [String: String]) async {
+        if let server = metadata["server"] {
+            AccountSessionStore.setDefault(server, forKey: Self.serverKey)
+        }
+        if let username = metadata["username"] {
+            AccountSessionStore.setDefault(username, forKey: Self.usernameKey)
+        }
+        if let userID = metadata["user_id"] {
+            AccountSessionStore.setDefault(userID, forKey: Self.userIDKey)
+        }
+    }
+
     // MARK: - Reads (never throw — return [] on not-connected/failure)
 
     func topTracks(range: StatRange, limit: Int) async -> [UnifiedTrack] {

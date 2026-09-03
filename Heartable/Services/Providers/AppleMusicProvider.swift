@@ -76,6 +76,12 @@ struct AppleMusicProvider: MusicProvider {
         }
     }
 
+    func restoreConnection(metadata: [String: String]) async {
+        // MusicKit permission is device-owned, while the decision to include
+        // Apple Music in Heartable belongs to the Heartable account.
+        Self.isDisabled = false
+    }
+
     /// Stops account-owned playback during sign-out/account switching without
     /// changing MusicKit authorization or this account's connection preference.
     @MainActor

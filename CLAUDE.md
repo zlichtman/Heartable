@@ -70,6 +70,28 @@ State that belongs to a user must either live in a store reset by the account
 shell or use an account-scoped persistence key/file. Register provider
 credentials and account-owned preferences with `AccountSessionStore`.
 
+Authentication and provider restoration are one ordered bootstrap owned by
+`RootView`:
+
+1. Supabase emits the locally persisted Heartable session immediately and
+   refreshes it in the background.
+2. `AccountSessionStore` activates that user's namespace before the session is
+   published to views.
+3. `MeStore` paints the account-scoped cached profile while reconciling the
+   authoritative profile.
+4. `ProvidersStore` merges the cached and RLS-protected
+   `provider_connections` manifest, restores safe metadata, then probes local
+   credentials.
+5. The app shell hydrates cached library content and refreshes it only after
+   provider restoration reaches a coherent state.
+
+A provider pairing and a usable device credential are different states. Pairing
+intent belongs to the Heartable account in Supabase; secrets stay in an
+account-scoped, iCloud-synchronizable Keychain item. A missing credential must
+surface as **Reconnect**, never silently rewrite the account pairing as
+disconnected. Normal sign-out clears in-memory state only. Explicit service
+disconnect or account deletion is what removes durable state.
+
 ## Provider and playback rules
 
 `ProviderCatalog` is the single source of truth for provider availability,
@@ -114,6 +136,10 @@ metadata and targeted refreshes. Never mix data between accounts.
 Search supports explicit content-type and provider filters. Artist-page sorting
 is limited to A–Z and Song Count.
 
+Backups must remain inspectable in-app: users can drill from a snapshot into its
+playlists and tracks. The Changes view compares each snapshot with its immediate
+predecessor and exposes added/removed song occurrences with collection context.
+
 ## Listening stats
 
 A listen is an actual qualified play, not library presence, album metadata, or
@@ -154,8 +180,8 @@ Photo Library, Camera, and Files.
   listening history, friend profiles, and account surfaces.
 - Use shared back/down controls and consistent full-player/lyrics dismissal.
 - Route all transient feedback through `BannerCenter` as an app-wide Heartable
-  notification. Never add screen-local toasts, snackbars, or duplicate playback
-  feedback. Presented sheets must host notifications above their own surface.
+  notification. `BannerCenter` delegates to Apple's notification system; never
+  add screen-local toasts, snackbars, overlays, or duplicate playback feedback.
 - Navigation pushes use the shared back chevron. Heartable-owned sheets use the
   shared down-chevron dismissal; do not introduce text Close buttons or xmarks.
   Use `heartableSheetChrome` for theme coverage and presentation geometry.

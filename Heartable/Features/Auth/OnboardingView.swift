@@ -164,7 +164,7 @@ struct OnboardingView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 6)
-            if busy == entry.id {
+            if busy == entry.id || providers.isRestoring {
                 ProgressView().controlSize(.small)
             } else {
                 Button(connected ? "Connected" : "Connect") { connect(entry) }
@@ -228,8 +228,9 @@ struct OnboardingView: View {
         switch step {
         case .profile:
             Task {
-                await saveProfile()
-                withAnimation { step = .connect }
+                if await saveProfile() {
+                    withAnimation { step = .connect }
+                }
             }
         case .connect:
             onDone()
@@ -241,9 +242,8 @@ struct OnboardingView: View {
     private func connect(_ entry: ProviderCatalogEntry) {
         busy = entry.id
         Task {
-            do { try await ProviderRegistry.provider(for: entry.id).connect() }
+            do { try await providers.connect(entry.id) }
             catch { self.error = error.localizedDescription }
-            await providers.refresh()
             busy = nil
         }
     }
@@ -267,14 +267,17 @@ struct OnboardingView: View {
         }
     }
 
-    private func saveProfile() async {
+    /// Keep the user on the profile step when persistence fails. The previous
+    /// flow displayed an error but advanced anyway, which made a failed name or
+    /// handle save look successful until the next launch.
+    private func saveProfile() async -> Bool {
         saving = true
         error = nil
         defer { saving = false }
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let tag = handle.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         // Nothing entered yet is fine; they can fill it in later from Profile.
-        guard !name.isEmpty || !tag.isEmpty else { return }
+        guard !name.isEmpty || !tag.isEmpty else { return true }
         do {
             try await BackendAPI.shared.updateMyProfile(
                 displayName: .some(name.isEmpty ? nil : name),
@@ -282,8 +285,10 @@ struct OnboardingView: View {
             )
             me.setNameHandle(displayName: name.isEmpty ? nil : name,
                              handle: tag.isEmpty ? nil : tag, userID: auth.userID)
+            return true
         } catch {
             self.error = error.localizedDescription
+            return false
         }
     }
 

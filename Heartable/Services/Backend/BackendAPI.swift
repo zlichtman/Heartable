@@ -62,6 +62,54 @@ struct BackendAPI: Sendable {
         try await client.from("profiles").upsert(row, onConflict: "user_id").execute()
     }
 
+    /// Persist onboarding on the Heartable account, not just this installation.
+    /// This prevents a reinstall or second device from presenting setup again.
+    func completeOnboarding() async throws {
+        guard let uid = await myUID() else { throw BackendError.notSignedIn }
+        let row = ProfileUpsertDTO(
+            userId: uid,
+            onboardingCompletedAt: nowISO,
+            updatedAt: nowISO
+        )
+        try await client.from("profiles")
+            .upsert(row, onConflict: "user_id")
+            .execute()
+    }
+
+    // MARK: - Account provider connections
+
+    /// The durable, non-secret pairing manifest for the signed-in account.
+    func providerConnections() async throws -> [ProviderConnectionDTO] {
+        guard let uid = await myUID() else { throw BackendError.notSignedIn }
+        return try await client.from("provider_connections")
+            .select()
+            .eq("user_id", value: uid.uuidString)
+            .execute()
+            .value
+    }
+
+    /// Record account-level connection intent. Provider credentials remain in
+    /// Keychain; only safe restoration metadata is accepted by callers here.
+    func upsertProviderConnection(
+        providerId: ProviderID,
+        connected: Bool,
+        metadata: [String: String]
+    ) async throws {
+        guard let uid = await myUID() else { throw BackendError.notSignedIn }
+        let timestamp = nowISO
+        let row = ProviderConnectionDTO(
+            userId: uid,
+            providerId: providerId.rawValue,
+            connected: connected,
+            metadata: metadata,
+            connectedAt: connected ? timestamp : nil,
+            updatedAt: timestamp
+        )
+        try await client.from("provider_connections")
+            .upsert(row, onConflict: "user_id,provider_id")
+            .execute()
+    }
+
     /// Ensure the signed-in user has a profile row (spotify quick-signup fallback).
     func upsertMyProfileSpotify(spotifyId: String,
                                 displayName: String?,

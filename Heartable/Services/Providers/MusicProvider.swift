@@ -11,6 +11,15 @@ protocol MusicProvider: Sendable {
     func connect() async throws
     func disconnect() async
 
+    /// Non-secret values that let another installation restore the account's
+    /// connection intent. OAuth tokens and passwords must never be returned.
+    func connectionMetadata() async -> [String: String]
+
+    /// Apply account-owned connection intent before the local availability probe.
+    /// Token providers remain unavailable when Keychain has no credential, which
+    /// ProvidersStore reports as "reconnect required" rather than disconnected.
+    func restoreConnection(metadata: [String: String]) async
+
     func topTracks(range: StatRange, limit: Int) async -> [UnifiedTrack]
     func likedTracks(limit: Int) async -> [UnifiedTrack]
     func playlists() async -> [UnifiedPlaylist]
@@ -27,6 +36,9 @@ extension MusicProvider {
     func likedTracks(limit: Int = 100) async -> [UnifiedTrack] {
         await likedTracks(limit: limit)
     }
+
+    func connectionMetadata() async -> [String: String] { [:] }
+    func restoreConnection(metadata: [String: String]) async {}
 }
 
 /// Thrown by adapters when an action can't proceed; message is user-facing.

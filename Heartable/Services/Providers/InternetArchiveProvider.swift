@@ -35,6 +35,10 @@ struct InternetArchiveProvider: MusicProvider {
         }
     }
 
+    func restoreConnection(metadata: [String: String]) async {
+        AccountSessionStore.setDefault("1", forKey: Self.enabledKey)
+    }
+
     // MARK: - Reads (never throw — return [] on any failure)
 
     func topTracks(range: StatRange, limit: Int) async -> [UnifiedTrack] {

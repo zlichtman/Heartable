@@ -33,12 +33,15 @@ final class AuthStore {
     }
 
     func signInWithPassword(email: String, password: String) async throws {
-        _ = try await client.auth.signIn(email: email, password: password)
+        _ = try await client.auth.signIn(email: Self.normalizedEmail(email), password: password)
     }
 
     /// Returns true when the account needs email confirmation (no session yet).
     func signUp(email: String, password: String) async throws -> Bool {
-        let res = try await client.auth.signUp(email: email, password: password)
+        let res = try await client.auth.signUp(
+            email: Self.normalizedEmail(email),
+            password: password
+        )
         return res.session == nil
     }
 
@@ -53,7 +56,11 @@ final class AuthStore {
         // Use the Supabase project's configured recovery redirect. A custom
         // app-scheme redirect would be a dead end until Heartable has an
         // authenticated "choose a new password" callback flow.
-        try await client.auth.resetPasswordForEmail(email)
+        try await client.auth.resetPasswordForEmail(Self.normalizedEmail(email))
+    }
+
+    nonisolated static func normalizedEmail(_ email: String) -> String {
+        email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
 
     func signOut() async throws {

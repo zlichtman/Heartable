@@ -1,138 +1,68 @@
-import SwiftUI
+import Foundation
 
-/// App-wide Heartable notifications. Every short-lived success, error, and
-/// informational message enters this one queue instead of being rendered as a
-/// screen-local toast. Hosts are attached to both the app shell and presented
-/// sheets so the active notification is always above the surface being used.
+/// The single routing point for short-lived app feedback.
+///
+/// The historical name is retained so feature code does not need to know how
+/// feedback is delivered. Unlike the old implementation, this type never draws
+/// an in-app toast. Every message is handed to Apple's notification system by
+/// `LocalNotifier`, which also makes foreground feedback use the same native
+/// banner, accessibility, and user settings as background notifications.
 @MainActor
 @Observable
 final class BannerCenter {
-    struct Banner: Identifiable, Equatable {
-        let id = UUID()
-        let message: String
-        let style: Style
+    struct Notification: Equatable, Sendable {
+        let title: String
+        let body: String
+        let categoryIdentifier: String
     }
 
-    enum Style: Equatable {
+    enum Style: String, Equatable, Sendable {
         case success, error, info
-        var icon: String {
-            switch self {
-            case .success: "checkmark.circle.fill"
-            case .error: "exclamationmark.triangle.fill"
-            case .info: "bell.fill"
-            }
+
+        fileprivate var categoryIdentifier: String {
+            "heartable.feedback.\(rawValue)"
         }
     }
 
-    private(set) var current: Banner?
-    private var pending: [Banner] = []
-    private var dismissTask: Task<Void, Never>?
-    private var advanceTask: Task<Void, Never>?
+    typealias Delivery = @MainActor (Notification) -> Void
+
+    private let deliver: Delivery
+    private var lastMessage: String?
+    private var lastDeliveryDate = Date.distantPast
+
+    init(deliver: @escaping Delivery = { notification in
+        LocalNotifier.send(
+            title: notification.title,
+            body: notification.body,
+            categoryIdentifier: notification.categoryIdentifier
+        )
+    }) {
+        self.deliver = deliver
+    }
 
     func show(_ message: String, style: Style = .info) {
         let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        let banner = Banner(message: trimmed, style: style)
-        guard current == nil, advanceTask == nil else {
-            // Avoid stacking the same provider error several times when two
-            // refresh paths finish together.
-            if current?.message != banner.message,
-               pending.last?.message != banner.message {
-                pending.append(banner)
-            }
+
+        // Parallel refresh paths can report the same failure at almost the same
+        // time. Avoid asking iOS to stack duplicate native notifications.
+        let now = Date()
+        if lastMessage == trimmed, now.timeIntervalSince(lastDeliveryDate) < 1.5 {
             return
         }
-        present(banner)
-    }
+        lastMessage = trimmed
+        lastDeliveryDate = now
 
-    private func present(_ banner: Banner) {
-        current = banner
-        dismissTask?.cancel()
-        dismissTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(banner.style == .error ? 4.2 : 2.8))
-            guard !Task.isCancelled else { return }
-            self?.dismiss()
-        }
+        deliver(
+            Notification(
+                title: "Heartable",
+                body: trimmed,
+                categoryIdentifier: style.categoryIdentifier
+            )
+        )
     }
 
     func success(_ message: String) { show(message, style: .success) }
     func error(_ message: String) { show(message, style: .error) }
     func info(_ message: String) { show(message, style: .info) }
-
-    func dismiss() {
-        dismissTask?.cancel()
-        dismissTask = nil
-        current = nil
-        guard !pending.isEmpty else { return }
-        let next = pending.removeFirst()
-        advanceTask?.cancel()
-        advanceTask = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(180))
-            guard !Task.isCancelled else { return }
-            self?.advanceTask = nil
-            self?.present(next)
-        }
-    }
-}
-
-private struct BannerHost: ViewModifier {
-    @Environment(ThemeStore.self) private var theme
-    let center: BannerCenter
-
-    func body(content: Content) -> some View {
-        content.overlay(alignment: .top) {
-            if let banner = center.current {
-                bannerCard(banner)
-                    .padding(.horizontal, 14)
-                    .padding(.top, 4)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .onTapGesture { center.dismiss() }
-                    .zIndex(1000)
-            }
-        }
-        .animation(.spring(response: 0.38, dampingFraction: 0.85), value: center.current)
-    }
-
-    private func bannerCard(_ banner: BannerCenter.Banner) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: banner.style.icon)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(tint(banner.style))
-            Text(banner.message)
-                .font(Typography.semibold(14))
-                .foregroundStyle(theme.palette.text)
-                .lineLimit(3)
-            Spacer(minLength: 4)
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .frame(maxWidth: 560, alignment: .leading)
-        .background(theme.palette.bgElevated, in: RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
-                .stroke(theme.palette.border, lineWidth: 1)
-        )
-        .shadow(color: .black.opacity(0.18), radius: 12, y: 4)
-    }
-
-    private func tint(_ style: BannerCenter.Style) -> Color {
-        switch style {
-        case .success: theme.palette.emerald
-        case .error: theme.palette.danger
-        case .info: theme.palette.rose
-        }
-    }
-}
-
-extension View {
-    /// Hosts app-wide Heartable notifications at the top of this presentation.
-    func heartableNotificationHost(_ center: BannerCenter) -> some View {
-        modifier(BannerHost(center: center))
-    }
-
-    /// Compatibility for older call sites while notification terminology becomes
-    /// the sole product language.
-    func bannerHost(_ center: BannerCenter) -> some View {
-        heartableNotificationHost(center)
-    }
 }

@@ -33,6 +33,10 @@ struct DeezerProvider: MusicProvider {
         }
     }
 
+    func restoreConnection(metadata: [String: String]) async {
+        AccountSessionStore.setDefault("1", forKey: Self.enabledKey)
+    }
+
     // MARK: Reads (never throw — return [] on not-connected/failure)
 
     func topTracks(range: StatRange, limit: Int) async -> [UnifiedTrack] {

@@ -6,6 +6,13 @@ import UniformTypeIdentifiers
 /// restorable history. Restoring currently targets Spotify; capture supports every
 /// live provider represented by the local snapshot importer.
 struct BackupsView: View {
+    private enum HistoryMode: String, CaseIterable, Identifiable {
+        case history = "History"
+        case changes = "Changes"
+
+        var id: String { rawValue }
+    }
+
     private enum PendingBackupAction {
         case restore(UUID)
         case delete(UUID)
@@ -33,6 +40,9 @@ struct BackupsView: View {
     @State private var expandedID: UUID?
     @State private var playlists: [SnapshotPlaylistDTO] = []
     @State private var likedCount = 0
+    @State private var selectedContent: BackupContentSelection?
+    @State private var selectedDiff: BackupDiffSelection?
+    @State private var historyMode: HistoryMode = .history
     @State private var restoringID: UUID?
     @State private var deletingID: UUID?
 
@@ -69,6 +79,12 @@ struct BackupsView: View {
             }
             .background(theme.palette.bg.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(item: $selectedContent) { selection in
+                BackupContentsView(selection: selection)
+            }
+            .navigationDestination(item: $selectedDiff) { selection in
+                BackupChangesView(selection: selection)
+            }
         }
         .task {
             guard !loaded else { return }
@@ -386,6 +402,16 @@ struct BackupsView: View {
             }
         }
 
+        if loaded, !snapshots.isEmpty {
+            Picker("Backup history view", selection: $historyMode) {
+                ForEach(HistoryMode.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            .tint(theme.palette.rose)
+        }
+
         if !loaded {
             ProgressView()
                 .tint(theme.palette.rose)
@@ -402,11 +428,73 @@ struct BackupsView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 30)
-        } else {
+        } else if historyMode == .history {
             ForEach(snapshots) { snap in
                 snapshotCard(snap)
             }
+        } else {
+            changesList
         }
+    }
+
+    private var changesList: some View {
+        VStack(spacing: 10) {
+            ForEach(Array(snapshots.enumerated()), id: \.element.id) { index, snapshot in
+                let prior = snapshots.indices.contains(index + 1) ? snapshots[index + 1] : nil
+                Button {
+                    selectedDiff = BackupDiffSelection(
+                        current: BackupSnapshotReference(snapshot),
+                        previous: prior.map(BackupSnapshotReference.init)
+                    )
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: prior == nil ? "sparkles" : "arrow.left.arrow.right")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(theme.palette.rose)
+                            .frame(width: 38, height: 38)
+                            .background(theme.palette.roseDim, in: RoundedRectangle(cornerRadius: 10))
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(snapshot.name?.isEmpty == false ? snapshot.name! : "Heartable backup")
+                                .font(Typography.semibold(14))
+                                .foregroundStyle(theme.palette.text)
+                                .lineLimit(1)
+                            Text(comparisonLabel(current: snapshot, previous: prior))
+                                .font(Typography.body(11))
+                                .foregroundStyle(theme.palette.textMuted)
+                                .lineLimit(1)
+                        }
+
+                        Spacer(minLength: 6)
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(theme.palette.textMuted)
+                    }
+                    .padding(13)
+                    .frame(maxWidth: .infinity, minHeight: 62)
+                    .background(theme.palette.card, in: RoundedRectangle(cornerRadius: Theme.Radius.md))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: Theme.Radius.md)
+                            .stroke(theme.palette.border, lineWidth: 1)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(prior == nil
+                    ? "Explains that this is the first backup"
+                    : "Shows songs added and removed since the prior backup")
+            }
+        }
+    }
+
+    private func comparisonLabel(
+        current: LibrarySnapshotDTO,
+        previous: LibrarySnapshotDTO?
+    ) -> String {
+        guard let previous else { return "First backup · no earlier comparison" }
+        let date = previous.createdAt.map(relativeLong) ?? ""
+        return date.isEmpty ? "Compared with the prior backup" : "Compared with \(date)"
     }
 
     // MARK: - CSV import
@@ -474,7 +562,7 @@ struct BackupsView: View {
             }
 
             if expandedID == snap.id {
-                expandedDetail
+                expandedDetail(for: snap)
             }
         }
         .padding(14)
@@ -578,42 +666,84 @@ struct BackupsView: View {
     }
 
     @ViewBuilder
-    private var expandedDetail: some View {
+    private func expandedDetail(for snapshot: LibrarySnapshotDTO) -> some View {
         Divider().overlay(theme.palette.border)
 
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             if likedCount > 0 {
-                Label("\(likedCount) liked songs", systemImage: "heart.fill")
-                    .font(Typography.medium(12))
-                    .foregroundStyle(theme.palette.textSecondary)
+                Button {
+                    selectedContent = .likedSongs(
+                        snapshotID: snapshot.id,
+                        snapshotName: snapshot.name,
+                        count: likedCount
+                    )
+                } label: {
+                    contentRow(
+                        icon: "heart.fill",
+                        title: "Liked Songs",
+                        count: likedCount
+                    )
+                }
+                .buttonStyle(.plain)
             }
 
             if playlists.isEmpty {
-                Text("No playlists in this snapshot.")
+                Text(likedCount > 0 ? "No playlists in this backup." : "This backup is empty.")
                     .font(Typography.body(12))
                     .foregroundStyle(theme.palette.textMuted)
+                    .padding(.vertical, 4)
             } else {
                 ForEach(playlists) { pl in
-                    HStack(spacing: 8) {
-                        Image(systemName: "music.note.list")
-                            .font(.system(size: 11))
-                            .foregroundStyle(theme.palette.textMuted)
-                            .frame(width: 16)
-                        Text(pl.name?.isEmpty == false ? pl.name! : "Untitled playlist")
-                            .font(Typography.medium(13))
-                            .foregroundStyle(theme.palette.text)
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        Text("\(pl.trackCount ?? 0)")
-                            .font(Typography.body(12))
-                            .foregroundStyle(theme.palette.textMuted)
+                    Button {
+                        selectedContent = .playlist(
+                            id: pl.id,
+                            name: pl.name,
+                            imageURL: pl.imageUrl,
+                            count: pl.trackCount ?? 0
+                        )
+                    } label: {
+                        contentRow(
+                            icon: "music.note.list",
+                            title: pl.name?.isEmpty == false ? pl.name! : "Untitled playlist",
+                            count: pl.trackCount ?? 0
+                        )
                     }
+                    .buttonStyle(.plain)
                 }
             }
         }
-        .padding(12)
+        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.palette.surface, in: RoundedRectangle(cornerRadius: Theme.Radius.sm))
+    }
+
+    private func contentRow(icon: String, title: String, count: Int) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(theme.palette.rose)
+                .frame(width: 30, height: 30)
+                .background(theme.palette.roseDim, in: RoundedRectangle(cornerRadius: 8))
+
+            Text(title)
+                .font(Typography.medium(13))
+                .foregroundStyle(theme.palette.text)
+                .lineLimit(1)
+
+            Spacer(minLength: 6)
+
+            Text("\(count)")
+                .font(Typography.body(12))
+                .foregroundStyle(theme.palette.textMuted)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(theme.palette.textMuted)
+        }
+        .frame(maxWidth: .infinity, minHeight: 42)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityHint("Shows the tracks in this backup")
     }
 
     // MARK: - Atoms
@@ -801,6 +931,703 @@ struct BackupsView: View {
         snapshots.removeAll { $0.id == id }
         derivedProviders[id] = nil
         if expandedID == id { expandedID = nil }
+    }
+}
+
+private struct BackupSnapshotReference: Hashable {
+    let id: UUID
+    let name: String
+    let createdAt: String?
+    let expectedTrackCount: Int
+
+    init(_ snapshot: LibrarySnapshotDTO) {
+        id = snapshot.id
+        name = snapshot.name?.isEmpty == false ? snapshot.name! : "Heartable backup"
+        createdAt = snapshot.createdAt
+        expectedTrackCount = (snapshot.trackCount ?? 0) + (snapshot.likedCount ?? 0)
+    }
+}
+
+private struct BackupDiffSelection: Hashable, Identifiable {
+    let current: BackupSnapshotReference
+    let previous: BackupSnapshotReference?
+
+    var id: UUID { current.id }
+}
+
+/// One saved occurrence of a song. The collection is part of its identity so a
+/// song removed from one playlist but retained in another is still visible in a
+/// comparison.
+struct BackupInventoryItem: Identifiable, Equatable, Sendable {
+    let uri: String
+    let name: String?
+    let artist: String?
+    let album: String?
+    let artworkURL: String?
+    let collection: String
+    let position: Int
+
+    var id: String { "\(comparisonKey)#\(position)" }
+
+    var comparisonKey: String {
+        let normalizedCollection = collection
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        return "\(uri)|\(normalizedCollection)"
+    }
+
+    var providerID: ProviderID? {
+        ProviderID(rawValue: String(uri.prefix { $0 != ":" }))
+    }
+}
+
+struct BackupSnapshotDifference: Equatable, Sendable {
+    let added: [BackupInventoryItem]
+    let removed: [BackupInventoryItem]
+}
+
+enum BackupSnapshotDiffer {
+    /// Multiset comparison preserves duplicate occurrences while matching on the
+    /// stable provider URI plus collection name, rather than snapshot-local row IDs.
+    static func difference(
+        current: [BackupInventoryItem],
+        previous: [BackupInventoryItem]
+    ) -> BackupSnapshotDifference {
+        var unmatchedPrevious = Dictionary(
+            grouping: previous,
+            by: \.comparisonKey
+        ).mapValues(\.count)
+        var added: [BackupInventoryItem] = []
+        for item in current {
+            if let count = unmatchedPrevious[item.comparisonKey], count > 0 {
+                unmatchedPrevious[item.comparisonKey] = count - 1
+            } else {
+                added.append(item)
+            }
+        }
+
+        var unmatchedCurrent = Dictionary(
+            grouping: current,
+            by: \.comparisonKey
+        ).mapValues(\.count)
+        var removed: [BackupInventoryItem] = []
+        for item in previous {
+            if let count = unmatchedCurrent[item.comparisonKey], count > 0 {
+                unmatchedCurrent[item.comparisonKey] = count - 1
+            } else {
+                removed.append(item)
+            }
+        }
+        return BackupSnapshotDifference(added: added, removed: removed)
+    }
+}
+
+private enum BackupInventoryLoader {
+    static func load(snapshotID: UUID) async -> [BackupInventoryItem] {
+        async let playlistsFetch = BackendAPI.shared.fetchSnapshotPlaylists(snapshotID: snapshotID)
+        async let likedFetch = BackendAPI.shared.fetchSnapshotLikedTracks(snapshotID: snapshotID)
+
+        let playlists = await playlistsFetch
+        let playlistRows = await loadPlaylists(playlists, maxConcurrent: 6)
+        var inventory = playlistRows
+            .sorted { $0.index < $1.index }
+            .flatMap(\.tracks)
+
+        let liked = await likedFetch
+        inventory.append(contentsOf: liked.enumerated().map { offset, track in
+            BackupInventoryItem(
+                uri: track.spotifyTrackUri,
+                name: track.trackName,
+                artist: track.artistName,
+                album: track.albumName,
+                artworkURL: track.albumArtUrl,
+                collection: "Liked Songs",
+                position: track.position ?? offset
+            )
+        })
+        return inventory
+    }
+
+    private static func loadPlaylists(
+        _ playlists: [SnapshotPlaylistDTO],
+        maxConcurrent: Int
+    ) async -> [(index: Int, tracks: [BackupInventoryItem])] {
+        await withTaskGroup(of: (Int, [BackupInventoryItem]).self) { group in
+            var results: [(index: Int, tracks: [BackupInventoryItem])] = []
+            var nextIndex = 0
+
+            func enqueue(_ index: Int) {
+                let playlist = playlists[index]
+                let collection = playlist.name?.isEmpty == false
+                    ? playlist.name!
+                    : "Untitled playlist"
+                group.addTask {
+                    let tracks = await BackendAPI.shared.fetchSnapshotTracks(
+                        snapshotPlaylistID: playlist.id
+                    )
+                    return (index, tracks.enumerated().map { offset, track in
+                        BackupInventoryItem(
+                            uri: track.spotifyTrackUri,
+                            name: track.trackName,
+                            artist: track.artistName,
+                            album: track.albumName,
+                            artworkURL: track.albumArtUrl,
+                            collection: collection,
+                            position: track.position ?? offset
+                        )
+                    })
+                }
+            }
+
+            while nextIndex < min(maxConcurrent, playlists.count) {
+                enqueue(nextIndex)
+                nextIndex += 1
+            }
+            for await result in group {
+                results.append((index: result.0, tracks: result.1))
+                if nextIndex < playlists.count {
+                    enqueue(nextIndex)
+                    nextIndex += 1
+                }
+            }
+            return results
+        }
+    }
+}
+
+private struct BackupChangesView: View {
+    @Environment(ThemeStore.self) private var theme
+    @Environment(\.dismiss) private var dismiss
+
+    let selection: BackupDiffSelection
+
+    @State private var difference = BackupSnapshotDifference(added: [], removed: [])
+    @State private var loading = true
+    @State private var failed = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    comparisonSummary
+
+                    if selection.previous == nil {
+                        firstBackupState
+                    } else if loading {
+                        ProgressView()
+                            .tint(theme.palette.rose)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 48)
+                    } else if failed {
+                        messageState(
+                            icon: "exclamationmark.arrow.triangle.2.circlepath",
+                            text: "Couldn’t load this comparison. Pull back and try again."
+                        )
+                    } else if difference.added.isEmpty, difference.removed.isEmpty {
+                        messageState(
+                            icon: "checkmark.circle.fill",
+                            text: "No songs were added or removed."
+                        )
+                    } else {
+                        changeSection(
+                            title: "Added",
+                            icon: "plus",
+                            tint: theme.palette.emerald,
+                            items: difference.added
+                        )
+                        changeSection(
+                            title: "Removed",
+                            icon: "minus",
+                            tint: theme.palette.danger,
+                            items: difference.removed
+                        )
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 36)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .background(theme.palette.bg.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .task(id: selection.id) { await loadDifference() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            HeartableNavigationButton(kind: .back, action: dismiss.callAsFunction)
+            Text("Changes")
+                .font(Typography.heading(25))
+                .foregroundStyle(theme.palette.text)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 14)
+        .background(theme.palette.bg)
+    }
+
+    private var comparisonSummary: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(selection.current.name)
+                    .font(Typography.semibold(17))
+                    .foregroundStyle(theme.palette.text)
+                Text(comparisonSubtitle)
+                    .font(Typography.body(12))
+                    .foregroundStyle(theme.palette.textSecondary)
+            }
+
+            if selection.previous != nil, !loading, !failed {
+                HStack(spacing: 10) {
+                    changeCount(
+                        difference.added.count,
+                        label: "added",
+                        icon: "plus",
+                        tint: theme.palette.emerald
+                    )
+                    changeCount(
+                        difference.removed.count,
+                        label: "removed",
+                        icon: "minus",
+                        tint: theme.palette.danger
+                    )
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.palette.card, in: RoundedRectangle(cornerRadius: Theme.Radius.lg))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                .stroke(theme.palette.border, lineWidth: 1)
+        }
+    }
+
+    private var comparisonSubtitle: String {
+        guard let previous = selection.previous else {
+            return "This is the first saved version of your library."
+        }
+        if let timestamp = previous.createdAt {
+            let relative = relativeLong(timestamp)
+            if !relative.isEmpty { return "Compared with \(relative)" }
+        }
+        return "Compared with \(previous.name)"
+    }
+
+    private var firstBackupState: some View {
+        messageState(
+            icon: "sparkles",
+            text: "Future backups will show added and removed songs here."
+        )
+    }
+
+    private func messageState(icon: String, text: String) -> some View {
+        VStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 23, weight: .medium))
+                .foregroundStyle(theme.palette.rose)
+            Text(text)
+                .font(Typography.body(13))
+                .foregroundStyle(theme.palette.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 44)
+    }
+
+    private func changeCount(_ count: Int, label: String, icon: String, tint: Color) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .bold))
+            Text("\(count) \(label)")
+                .font(Typography.semibold(12))
+        }
+        .foregroundStyle(tint)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 8)
+        .background(tint.opacity(0.12), in: Capsule())
+    }
+
+    @ViewBuilder
+    private func changeSection(
+        title: String,
+        icon: String,
+        tint: Color,
+        items: [BackupInventoryItem]
+    ) -> some View {
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 7) {
+                    Image(systemName: icon)
+                        .font(.system(size: 11, weight: .bold))
+                    Text(title.uppercased())
+                        .font(Typography.semibold(12))
+                        .tracking(1)
+                    Text("\(items.count)")
+                        .font(Typography.semibold(10))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(tint.opacity(0.12), in: Capsule())
+                }
+                .foregroundStyle(tint)
+
+                VStack(spacing: 0) {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                        changeRow(item)
+                        if index < items.count - 1 {
+                            Divider()
+                                .overlay(theme.palette.border)
+                                .padding(.leading, 58)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .background(theme.palette.card, in: RoundedRectangle(cornerRadius: Theme.Radius.lg))
+                .overlay {
+                    RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                        .stroke(theme.palette.border, lineWidth: 1)
+                }
+            }
+        }
+    }
+
+    private func changeRow(_ item: BackupInventoryItem) -> some View {
+        HStack(spacing: 10) {
+            CoverArt(
+                url: item.artworkURL.flatMap(URL.init(string:)),
+                size: 42,
+                corner: 8
+            )
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.name?.isEmpty == false ? item.name! : "Saved track")
+                    .font(Typography.medium(13))
+                    .foregroundStyle(theme.palette.text)
+                    .lineLimit(1)
+                Text(changeDetail(item))
+                    .font(Typography.body(11))
+                    .foregroundStyle(theme.palette.textMuted)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 4)
+
+            if let providerID = item.providerID {
+                ProviderBadge(id: providerID, size: 18)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 62)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func changeDetail(_ item: BackupInventoryItem) -> String {
+        let artist = item.artist?.isEmpty == false ? item.artist! : "Unknown artist"
+        return "\(artist) · \(item.collection)"
+    }
+
+    private func loadDifference() async {
+        guard let previous = selection.previous else {
+            loading = false
+            return
+        }
+
+        loading = true
+        failed = false
+        async let currentLoad = BackupInventoryLoader.load(snapshotID: selection.current.id)
+        async let previousLoad = BackupInventoryLoader.load(snapshotID: previous.id)
+        let (current, prior) = await (currentLoad, previousLoad)
+
+        if (selection.current.expectedTrackCount > 0 && current.isEmpty)
+            || (previous.expectedTrackCount > 0 && prior.isEmpty) {
+            failed = true
+        } else {
+            difference = BackupSnapshotDiffer.difference(current: current, previous: prior)
+        }
+        loading = false
+    }
+}
+
+/// A concrete collection inside a backup. Keeping this value small lets the
+/// parent page navigate immediately; the track payload is fetched only when the
+/// user asks to inspect it.
+private enum BackupContentSelection: Hashable, Identifiable {
+    case playlist(id: UUID, name: String?, imageURL: String?, count: Int)
+    case likedSongs(snapshotID: UUID, snapshotName: String?, count: Int)
+
+    var id: String {
+        switch self {
+        case .playlist(let id, _, _, _): "playlist-\(id.uuidString)"
+        case .likedSongs(let id, _, _): "liked-\(id.uuidString)"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .playlist(_, let name, _, _):
+            name?.isEmpty == false ? name! : "Untitled playlist"
+        case .likedSongs:
+            "Liked Songs"
+        }
+    }
+
+    var backupName: String? {
+        guard case .likedSongs(_, let name, _) = self else { return nil }
+        return name?.isEmpty == false ? name : nil
+    }
+
+    var imageURL: URL? {
+        guard case .playlist(_, _, let value, _) = self else { return nil }
+        return value.flatMap(URL.init(string:))
+    }
+
+    var expectedCount: Int {
+        switch self {
+        case .playlist(_, _, _, let count), .likedSongs(_, _, let count): count
+        }
+    }
+}
+
+private struct BackupTrackPreview: Identifiable {
+    let id: String
+    let uri: String
+    let name: String?
+    let artist: String?
+    let album: String?
+    let artworkURL: URL?
+    let durationMS: Int?
+    let position: Int?
+
+    init(_ track: SnapshotTrackDTO, fallbackPosition: Int) {
+        uri = track.spotifyTrackUri
+        name = track.trackName
+        artist = track.artistName
+        album = track.albumName
+        artworkURL = track.albumArtUrl.flatMap(URL.init(string:))
+        durationMS = track.durationMs
+        position = track.position
+        id = "\(track.spotifyTrackUri)-\(track.position ?? fallbackPosition)"
+    }
+
+    init(_ track: SnapshotLikedTrackDTO, fallbackPosition: Int) {
+        uri = track.spotifyTrackUri
+        name = track.trackName
+        artist = track.artistName
+        album = track.albumName
+        artworkURL = track.albumArtUrl.flatMap(URL.init(string:))
+        durationMS = track.durationMs
+        position = track.position
+        id = "\(track.spotifyTrackUri)-\(track.position ?? fallbackPosition)"
+    }
+
+    var providerID: ProviderID? {
+        ProviderID(rawValue: String(uri.prefix { $0 != ":" }))
+    }
+}
+
+/// Read-only inspection of one captured playlist (or the liked-song bucket).
+/// Backups are deliberately not playable here: this surface represents the
+/// immutable saved copy and keeps restore/delete actions on the parent card.
+private struct BackupContentsView: View {
+    @Environment(ThemeStore.self) private var theme
+    @Environment(\.dismiss) private var dismiss
+
+    let selection: BackupContentSelection
+
+    @State private var tracks: [BackupTrackPreview] = []
+    @State private var loading = true
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    collectionSummary
+                        .padding(.bottom, 16)
+
+                    if loading {
+                        ProgressView()
+                            .tint(theme.palette.rose)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 44)
+                    } else if tracks.isEmpty {
+                        emptyState
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
+                                trackRow(track, number: index + 1)
+                                if index < tracks.count - 1 {
+                                    Divider()
+                                        .overlay(theme.palette.border)
+                                        .padding(.leading, 68)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 12)
+                        .background(
+                            theme.palette.card,
+                            in: RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                                .stroke(theme.palette.border, lineWidth: 1)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.bottom, 36)
+            }
+            .scrollIndicators(.hidden)
+        }
+        .background(theme.palette.bg.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .task(id: selection.id) { await loadTracks() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            HeartableNavigationButton(kind: .back, action: dismiss.callAsFunction)
+            Text(selection.title)
+                .font(Typography.heading(23))
+                .foregroundStyle(theme.palette.text)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 6)
+        .padding(.bottom, 14)
+        .background(theme.palette.bg)
+    }
+
+    private var collectionSummary: some View {
+        HStack(spacing: 14) {
+            if let imageURL = selection.imageURL {
+                CoverArt(
+                    url: imageURL,
+                    size: 68,
+                    corner: Theme.Radius.md,
+                    placeholder: "music.note.list"
+                )
+            } else {
+                RoundedRectangle(cornerRadius: Theme.Radius.md)
+                    .fill(theme.palette.roseDim)
+                    .frame(width: 68, height: 68)
+                    .overlay {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 25, weight: .semibold))
+                            .foregroundStyle(theme.palette.rose)
+                    }
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(selection.title)
+                    .font(Typography.semibold(17))
+                    .foregroundStyle(theme.palette.text)
+                    .lineLimit(2)
+
+                if let backupName = selection.backupName {
+                    Text(backupName)
+                        .font(Typography.body(12))
+                        .foregroundStyle(theme.palette.textSecondary)
+                        .lineLimit(1)
+                }
+
+                Text(trackCountLabel)
+                    .font(Typography.body(12))
+                    .foregroundStyle(theme.palette.textMuted)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var trackCountLabel: String {
+        let count = loading ? selection.expectedCount : tracks.count
+        return "\(count) \(count == 1 ? "track" : "tracks")"
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 9) {
+            Image(systemName: "music.note")
+                .font(.system(size: 22, weight: .medium))
+            Text("No tracks were captured here.")
+                .font(Typography.body(13))
+        }
+        .foregroundStyle(theme.palette.textMuted)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 44)
+    }
+
+    private func trackRow(_ track: BackupTrackPreview, number: Int) -> some View {
+        HStack(spacing: 10) {
+            Text("\(number)")
+                .font(Typography.body(11))
+                .foregroundStyle(theme.palette.textMuted)
+                .frame(width: 18, alignment: .trailing)
+
+            CoverArt(url: track.artworkURL, size: 42, corner: 8)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(track.name?.isEmpty == false ? track.name! : "Saved track")
+                    .font(Typography.medium(13))
+                    .foregroundStyle(theme.palette.text)
+                    .lineLimit(1)
+
+                Text(trackDetail(track))
+                    .font(Typography.body(11))
+                    .foregroundStyle(theme.palette.textMuted)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 4)
+
+            if let providerID = track.providerID {
+                ProviderBadge(id: providerID, size: 18)
+            }
+
+            if let duration = durationLabel(track.durationMS) {
+                Text(duration)
+                    .font(Typography.body(10))
+                    .monospacedDigit()
+                    .foregroundStyle(theme.palette.textMuted)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 62)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func trackDetail(_ track: BackupTrackPreview) -> String {
+        [track.artist, track.album]
+            .compactMap { value in
+                guard let value, !value.isEmpty else { return nil }
+                return value
+            }
+            .joined(separator: " · ")
+    }
+
+    private func durationLabel(_ milliseconds: Int?) -> String? {
+        guard let milliseconds, milliseconds > 0 else { return nil }
+        let seconds = milliseconds / 1_000
+        return "\(seconds / 60):\(String(format: "%02d", seconds % 60))"
+    }
+
+    private func loadTracks() async {
+        loading = true
+        defer { loading = false }
+
+        switch selection {
+        case .playlist(let id, _, _, _):
+            tracks = await BackendAPI.shared.fetchSnapshotTracks(snapshotPlaylistID: id)
+                .enumerated()
+                .map { BackupTrackPreview($0.element, fallbackPosition: $0.offset) }
+        case .likedSongs(let snapshotID, _, _):
+            tracks = await BackendAPI.shared.fetchSnapshotLikedTracks(snapshotID: snapshotID)
+                .enumerated()
+                .map { BackupTrackPreview($0.element, fallbackPosition: $0.offset) }
+        }
     }
 }
 

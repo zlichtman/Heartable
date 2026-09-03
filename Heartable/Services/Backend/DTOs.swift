@@ -11,6 +11,7 @@ struct ProfileDTO: Codable, Sendable, Identifiable {
     var avatarUrl: String?
     var handle: String?
     var shareCode: String?
+    var onboardingCompletedAt: String?
 
     var id: UUID { userId }
 
@@ -21,6 +22,7 @@ struct ProfileDTO: Codable, Sendable, Identifiable {
         case avatarUrl = "avatar_url"
         case handle
         case shareCode = "share_code"
+        case onboardingCompletedAt = "onboarding_completed_at"
     }
 }
 
@@ -226,6 +228,7 @@ struct ProfileUpsertDTO: Codable, Sendable {
     var displayName: String?
     var avatarUrl: String?
     var handle: String?
+    var onboardingCompletedAt: String?
     var updatedAt: String?
 
     enum CodingKeys: String, CodingKey {
@@ -234,6 +237,29 @@ struct ProfileUpsertDTO: Codable, Sendable {
         case displayName = "display_name"
         case avatarUrl = "avatar_url"
         case handle
+        case onboardingCompletedAt = "onboarding_completed_at"
+        case updatedAt = "updated_at"
+    }
+}
+
+/// Account-owned connection intent. Tokens never enter this row: metadata is
+/// limited to non-secret restoration values such as a public username or server
+/// address. A retained `connected = false` row makes an explicit disconnect win
+/// over an older device's cached state.
+struct ProviderConnectionDTO: Codable, Sendable, Equatable {
+    var userId: UUID
+    var providerId: String
+    var connected: Bool
+    var metadata: [String: String]
+    var connectedAt: String?
+    var updatedAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case userId = "user_id"
+        case providerId = "provider_id"
+        case connected
+        case metadata
+        case connectedAt = "connected_at"
         case updatedAt = "updated_at"
     }
 }

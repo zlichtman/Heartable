@@ -83,7 +83,7 @@ struct JellyfinConnectSheet: View {
         Task {
             do {
                 try await JellyfinProvider.link(server: server, username: username, password: password)
-                await providers.refresh()
+                try await providers.recordConnected(.jellyfin)
                 banners.success("Connected Jellyfin")
                 dismiss()
             } catch {

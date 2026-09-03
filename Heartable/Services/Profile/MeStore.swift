@@ -12,6 +12,7 @@ final class MeStore {
     private(set) var featuredPlaylists: [UnifiedPlaylist] = []
     private(set) var profileModules = ProfileModulePreferenceDTO.defaults
     private(set) var hasLoadedFeaturedPlaylists = false
+    private(set) var hasResolvedAccount = false
 
     private var ownerID: UUID?
     private var profileLoaded = false
@@ -28,6 +29,9 @@ final class MeStore {
         return URL(string: s)
     }
     var avatarUrlString: String? { profile?.avatarUrl }
+    var hasCompletedOnboarding: Bool {
+        !(profile?.onboardingCompletedAt?.isEmpty ?? true)
+    }
 
     /// Switch the shared identity state to an account immediately. A cached
     /// public profile is applied synchronously so the first authenticated frame
@@ -52,11 +56,16 @@ final class MeStore {
             guard ownerID == userID, revision == profileMutationRevision else { return }
             profile = fetched ?? ProfileDTO(userId: userID)
             profileLoaded = true
+            hasResolvedAccount = true
             persistProfile()
         } catch {
+            guard ownerID == userID else { return }
             if profile == nil {
                 profile = ProfileDTO(userId: userID)
             }
+            // Resolve the gate even when offline. A local completion marker still
+            // admits returning users; unknown accounts can finish onboarding.
+            hasResolvedAccount = true
         }
     }
 
@@ -110,6 +119,17 @@ final class MeStore {
         persistProfile()
     }
 
+    func markOnboardingCompleted(userID: UUID?) {
+        guard let userID else { return }
+        prepare(for: userID)
+        if profile == nil { profile = ProfileDTO(userId: userID) }
+        profile?.onboardingCompletedAt = ISO8601DateFormatter().string(from: Date())
+        profileLoaded = true
+        hasResolvedAccount = true
+        profileMutationRevision += 1
+        persistProfile()
+    }
+
     /// Apply the exact ordered selection that was accepted by the backend.
     func setFeaturedPlaylists(_ playlists: [UnifiedPlaylist], userID: UUID?) {
         guard let userID else { return }
@@ -151,6 +171,7 @@ final class MeStore {
         // A cache is only the first paint. Always allow one authoritative refresh
         // for a newly activated app/account session.
         profileLoaded = false
+        hasResolvedAccount = profile != nil
         hasLoadedFeaturedPlaylists = false
         profileMutationRevision = 0
         curationMutationRevision = 0
@@ -185,6 +206,7 @@ final class MeStore {
         featuredPlaylists = []
         profileModules = ProfileModulePreferenceDTO.defaults
         profileLoaded = false
+        hasResolvedAccount = false
         hasLoadedFeaturedPlaylists = false
         profileMutationRevision = 0
         curationMutationRevision = 0

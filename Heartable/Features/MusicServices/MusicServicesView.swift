@@ -30,7 +30,11 @@ struct MusicServicesView: View {
         .background(theme.palette.bg.ignoresSafeArea())
         .navigationTitle("Music Services")
         .navigationBarTitleDisplayMode(.inline)
-        .task { await providers.refresh() }
+        .task {
+            // Account bootstrap owns the initial probe. This is only a later
+            // foreground re-check and must not race restoration metadata.
+            if !providers.isRestoring { await providers.refresh() }
+        }
         .sheet(item: $setupEntry) { entry in
             ServiceSetupSheet(entry: entry)
                 .presentationDetents([.medium, .large])
@@ -147,6 +151,7 @@ struct MusicServicesView: View {
 
     private func row(_ entry: ProviderCatalogEntry) -> some View {
         let connected = providers.isConnected(entry.id)
+        let reconnectRequired = providers.requiresReconnect(entry.id)
         let live = entry.status == .live
         return Group {
             if dynamicTypeSize.isAccessibilitySize {
@@ -157,7 +162,12 @@ struct MusicServicesView: View {
                             .foregroundStyle(theme.palette.text)
                     }
                     capabilityIcons(entry)
-                    control(entry, connected: connected, live: live)
+                    control(
+                        entry,
+                        connected: connected,
+                        live: live,
+                        reconnectRequired: reconnectRequired
+                    )
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
@@ -169,7 +179,12 @@ struct MusicServicesView: View {
                         capabilityIcons(entry)
                     }
                     Spacer(minLength: 6)
-                    control(entry, connected: connected, live: live)
+                    control(
+                        entry,
+                        connected: connected,
+                        live: live,
+                        reconnectRequired: reconnectRequired
+                    )
                 }
             }
         }
@@ -198,11 +213,16 @@ struct MusicServicesView: View {
     }
 
     @ViewBuilder
-    private func control(_ entry: ProviderCatalogEntry, connected: Bool, live: Bool) -> some View {
-        if busy == entry.id {
+    private func control(
+        _ entry: ProviderCatalogEntry,
+        connected: Bool,
+        live: Bool,
+        reconnectRequired: Bool
+    ) -> some View {
+        if busy == entry.id || (providers.isRestoring && !connected) {
             ProgressView().controlSize(.small)
         } else if live {
-            Button(connected ? "Disconnect" : "Connect") {
+            Button(connected ? "Disconnect" : (reconnectRequired ? "Reconnect" : "Connect")) {
                 toggle(entry, connected: connected)
             }
             .font(Typography.semibold(13))
@@ -248,19 +268,17 @@ struct MusicServicesView: View {
     private func performToggle(_ entry: ProviderCatalogEntry, connected: Bool) {
         busy = entry.id
         Task {
-            let provider = ProviderRegistry.provider(for: entry.id)
             do {
                 if connected {
-                    await provider.disconnect()
+                    await providers.disconnect(entry.id)
                     banners.info("Disconnected \(entry.label)")
                 } else {
-                    try await provider.connect()
+                    try await providers.connect(entry.id)
                     banners.success("Connected \(entry.label)")
                 }
             } catch {
                 banners.error(error.localizedDescription)
             }
-            await providers.refresh()
             busy = nil
         }
     }

@@ -55,6 +55,14 @@ struct ListenBrainzProvider: MusicProvider {
         Self.setUsername("")
     }
 
+    func connectionMetadata() async -> [String: String] {
+        Self.username.map { ["username": $0] } ?? [:]
+    }
+
+    func restoreConnection(metadata: [String: String]) async {
+        if let username = metadata["username"] { Self.setUsername(username) }
+    }
+
     // MARK: - Reads (never throw — return [] on any failure)
 
     func topTracks(range: StatRange, limit: Int) async -> [UnifiedTrack] {

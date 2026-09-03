@@ -11,14 +11,13 @@ struct AppearanceView: View {
     @State private var editingTheme: CustomTheme?
     @State private var showingThemePicker = false
 
-    /// One deliberately mixed palette rack. Terminal-inspired themes live beside
-    /// Heartable's softer presets instead of being presented as a separate mode.
+    /// One deliberately mixed palette rack. The set stays compact enough to scan,
+    /// while covering warm, cool, light, dark, muted, and high-energy directions.
     private let presetThemeKeys = [
-        Themes.defaultKey, "lavender", "sunset", "forest", "ocean", "champagne",
-        "gruvbox-dark", "catppuccin-mocha", "catppuccin-macchiato", "nord",
-        "dracula", "tokyo-night", "one-dark", "solarized-dark", "monokai",
-        "classic-terminal", "github-dark", "ayu-mirage", "night-owl", "cobalt2",
-        "carbon", "aurora", "synthwave", "vaporwave",
+        Themes.defaultKey, "blossom", "lavender", "sunset", "champagne",
+        "rosegold", "matcha", "forest", "ocean", "midnight", "eclipse",
+        "carbon", "ember", "aurora", "grape", "catppuccin-mocha", "nord",
+        "tokyo-night",
     ]
 
     private var shownThemeKeys: Set<String> {
@@ -233,15 +232,11 @@ struct AppearanceView: View {
 private struct ThemePickerSheet: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     let presets: [ThemeDef]
 
     @State private var editingTheme: CustomTheme?
-    @State private var washColor = Color.clear
-    @State private var washOpacity = 0.0
-    @State private var washTask: Task<Void, Never>?
 
     private var columns: [GridItem] {
         if dynamicTypeSize.isAccessibilitySize {
@@ -252,7 +247,13 @@ private struct ThemePickerSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
+        VStack(spacing: 0) {
+            pickerHeader
+
+            Rectangle()
+                .fill(theme.palette.border)
+                .frame(height: 1)
+
             ScrollView {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
                     ForEach(presets) { option(definition: $0) }
@@ -262,29 +263,34 @@ private struct ThemePickerSheet: View {
                 }
                 .padding(16)
             }
-            .background(theme.palette.bg.ignoresSafeArea())
-            .navigationTitle("Choose a Theme")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    HeartableSheetDismissButton(
-                        accessibilityLabel: "Dismiss theme picker"
-                    )
-                }
-            }
         }
-        .overlay {
-            washColor
-                .opacity(washOpacity)
-                .ignoresSafeArea()
-                .allowsHitTesting(false)
-                .accessibilityHidden(true)
-        }
+        .background(theme.palette.bg.ignoresSafeArea())
         .sheet(item: $editingTheme) { ThemeEditorView(editing: $0) }
         .sensoryFeedback(.selection, trigger: theme.currentKey)
         .presentationDetents([.large])
-        .heartableSheetChrome()
-        .onDisappear { washTask?.cancel() }
+        .heartableSheetChrome(dragIndicator: .hidden)
+        .accessibilityAction(.escape) { dismiss() }
+    }
+
+    /// Deliberately outside the scroll view: the title and one Heartable dismiss
+    /// affordance remain anchored and readable as the selected palette changes.
+    private var pickerHeader: some View {
+        HStack(spacing: 12) {
+            Text("Theme")
+                .font(Typography.heading(23))
+                .foregroundStyle(theme.palette.text)
+
+            Spacer(minLength: 8)
+
+            HeartableSheetDismissButton(
+                accessibilityLabel: "Dismiss theme picker",
+                drawsSurface: true
+            )
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 12)
+        .background(theme.palette.bg)
     }
 
     private func option(
@@ -295,7 +301,7 @@ private struct ThemePickerSheet: View {
         return ZStack(alignment: .bottomTrailing) {
             Button {
                 theme.setTheme(definition.key)
-                flash(definition.palette.rose)
+                dismiss()
             } label: {
                 VStack(alignment: .leading, spacing: 9) {
                     HStack {
@@ -361,23 +367,6 @@ private struct ThemePickerSheet: View {
         }
         .onLongPressGesture(minimumDuration: 0.4) {
             if let custom { editingTheme = custom }
-        }
-    }
-
-    private func flash(_ color: Color) {
-        washTask?.cancel()
-        washColor = color
-        if reduceMotion {
-            washOpacity = 0.12
-        } else {
-            withAnimation(.easeOut(duration: 0.08)) { washOpacity = 0.22 }
-        }
-        washTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(140))
-            guard !Task.isCancelled else { return }
-            withAnimation(.easeOut(duration: reduceMotion ? 0.08 : 0.28)) {
-                washOpacity = 0
-            }
         }
     }
 }

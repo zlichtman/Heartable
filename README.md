@@ -28,7 +28,7 @@ name.
 ## Current release
 
 - Marketing version: **1.0.0**
-- Build: **42**
+- Build: **44**
 - Minimum OS: **iOS 26**
 - Toolchain: **Swift 6**, SwiftUI, XcodeGen, Swift Package Manager
 - Backend: **Supabase**
@@ -63,11 +63,17 @@ Tools/                 reproducible asset tooling
 generated `Heartable.xcodeproj` is committed so Xcode Cloud can build without a
 project-generation dependency.
 
-Account-owned state must be account-scoped and reset on sign-out. Provider
-credentials remain attached to the Heartable account rather than defining the
-account. Widgets receive secret-free snapshots through
+Account-owned state is namespaced by the Supabase user. Provider pairing intent
+is stored in an RLS-protected account manifest, while provider secrets remain in
+account-scoped, iCloud-synchronizable Keychain items. A normal sign-out clears
+runtime state without disconnecting services; an explicit disconnect removes
+the pairing. Widgets receive secret-free snapshots through
 `group.com.zlichtman.heartable`; they never initialize Supabase or provider
 clients.
+
+Backups retain inspectable playlist and track contents. The in-app Changes view
+compares each snapshot to its immediate predecessor and calls out added and
+removed song occurrences with their collection context.
 
 ## Local setup
 

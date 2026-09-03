@@ -3,31 +3,36 @@ import XCTest
 
 @MainActor
 final class HeartableNotificationTests: XCTestCase {
-    func testNotificationsQueueWithoutReplacingTheVisibleMessage() async {
-        let center = BannerCenter()
+    func testFeedbackRoutesToAppleNotificationDelivery() {
+        var delivered: [BannerCenter.Notification] = []
+        let center = BannerCenter { delivered.append($0) }
 
         center.success("Profile saved")
         center.error("Couldn’t refresh library")
 
-        XCTAssertEqual(center.current?.message, "Profile saved")
-        XCTAssertEqual(center.current?.style, .success)
-
-        center.dismiss()
-        try? await Task.sleep(for: .milliseconds(250))
-
-        XCTAssertEqual(center.current?.message, "Couldn’t refresh library")
-        XCTAssertEqual(center.current?.style, .error)
-        center.dismiss()
+        XCTAssertEqual(delivered.count, 2)
+        XCTAssertEqual(delivered[0].title, "Heartable")
+        XCTAssertEqual(delivered[0].body, "Profile saved")
+        XCTAssertEqual(delivered[0].categoryIdentifier, "heartable.feedback.success")
+        XCTAssertEqual(delivered[1].categoryIdentifier, "heartable.feedback.error")
     }
 
-    func testDuplicateVisibleNotificationIsNotQueued() async {
-        let center = BannerCenter()
+    func testDuplicateFeedbackIsCoalesced() {
+        var delivered: [BannerCenter.Notification] = []
+        let center = BannerCenter { delivered.append($0) }
 
         center.info("Already connected")
         center.info("Already connected")
-        center.dismiss()
-        try? await Task.sleep(for: .milliseconds(250))
 
-        XCTAssertNil(center.current)
+        XCTAssertEqual(delivered.count, 1)
+    }
+
+    func testBlankFeedbackIsNotDelivered() {
+        var delivered: [BannerCenter.Notification] = []
+        let center = BannerCenter { delivered.append($0) }
+
+        center.info("  \n ")
+
+        XCTAssertTrue(delivered.isEmpty)
     }
 }

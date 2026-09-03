@@ -74,6 +74,16 @@ struct LastfmProvider: MusicProvider {
         AccountSessionStore.removeDefault(forKey: Self.enabledKey)
     }
 
+    func connectionMetadata() async -> [String: String] {
+        Self.username.map { ["username": $0] } ?? [:]
+    }
+
+    func restoreConnection(metadata: [String: String]) async {
+        if let username = metadata["username"] { Self.setUsername(username) }
+        guard Self.username != nil else { return }
+        AccountSessionStore.setDefault("1", forKey: Self.enabledKey)
+    }
+
     // MARK: - Reads (never throw — return [] on any failure)
 
     func topTracks(range: StatRange, limit: Int) async -> [UnifiedTrack] {

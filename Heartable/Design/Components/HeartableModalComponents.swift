@@ -36,17 +36,15 @@ struct HeartableSheetDismissButton: View {
 }
 
 /// Standard presentation chrome. It keeps every Heartable-owned drawer on the
-/// active theme and, crucially, hosts notifications above the sheet rather than
-/// behind it in the app shell.
+/// active theme. Transient feedback is delivered by the native iOS notification
+/// system, so sheets do not need their own overlay host.
 private struct HeartableSheetChrome: ViewModifier {
     @Environment(ThemeStore.self) private var theme
-    @Environment(BannerCenter.self) private var notifications
 
     let dragIndicator: Visibility
 
     func body(content: Content) -> some View {
         content
-            .heartableNotificationHost(notifications)
             .presentationBackground(theme.palette.bg)
             .presentationCornerRadius(30)
             .presentationDragIndicator(dragIndicator)

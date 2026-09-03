@@ -1,8 +1,34 @@
 import SwiftUI
 import UIKit
+import UserNotifications
+
+/// Makes local notifications visible while Heartable is in the foreground.
+/// Without this delegate, iOS stores the request but suppresses its banner while
+/// the app is active—the exact time most action feedback occurs.
+final class HeartableNotificationDelegate: NSObject, UIApplicationDelegate,
+    UNUserNotificationCenterDelegate
+{
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        UNUserNotificationCenter.current().delegate = self
+        return true
+    }
+
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        [.banner, .list, .sound]
+    }
+}
 
 @main
 struct HeartableApp: App {
+    @UIApplicationDelegateAdaptor(HeartableNotificationDelegate.self)
+    private var notificationDelegate
+
     @State private var theme = ThemeStore()
     @State private var auth = AuthStore()
     @State private var providers = ProvidersStore()
@@ -46,10 +72,6 @@ struct HeartableApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                // The notification host reads ThemeStore from the environment, so it must be
-                // applied BEFORE the .environment injections (which wrap it as the
-                // parent) — otherwise it can't find ThemeStore and crashes on launch.
-                .heartableNotificationHost(banners)
                 .environment(theme)
                 .environment(auth)
                 .environment(providers)

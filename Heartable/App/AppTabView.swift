@@ -49,16 +49,13 @@ struct AppTabView: View {
             FullPlayerView()
                 .heartableSheetChrome(dragIndicator: .hidden)
         }
-        // Cache hydration and provider reconciliation belong to the stable app
-        // shell, not the Home tab. The first stage makes cached content visible;
-        // the provider refresh then triggers the independent sync below.
+        // Cache hydration belongs to the stable app shell, not the Home tab.
+        // RootView owns account/provider activation so no provider is probed before
+        // the authenticated account namespace and durable manifest are restored.
         .task {
-            async let cachedData: Void = librarySession.prepareCachedData(
+            await librarySession.prepareCachedData(
                 using: playlistTracks
             )
-            async let providerState: Void = providers.refresh()
-            await cachedData
-            await providerState
         }
         .task(id: providers.refreshGeneration) {
             guard providers.hasRefreshed else { return }

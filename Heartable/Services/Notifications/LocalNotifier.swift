@@ -31,19 +31,24 @@ enum LocalNotifier {
 
     /// Fire an immediate local notification. No-ops gracefully if the user has
     /// not authorized notifications. Safe to call from `@MainActor`.
-    static func send(title: String, body: String) {
+    static func send(
+        title: String,
+        body: String,
+        categoryIdentifier: String = "heartable.general"
+    ) {
         Task {
-            guard await isAuthorized() else { return }
+            guard await isAuthorized(), prefAllow() else { return }
             let content = UNMutableNotificationContent()
             content.title = title
             content.body = body
             content.sound = .default
-            // ~1s trigger so the system reliably presents it even from foreground.
-            let trigger = UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+            content.categoryIdentifier = categoryIdentifier
+            content.interruptionLevel = .active
             let request = UNNotificationRequest(
                 identifier: UUID().uuidString,
                 content: content,
-                trigger: trigger
+                // A nil trigger asks iOS to deliver the notification immediately.
+                trigger: nil
             )
             try? await UNUserNotificationCenter.current().add(request)
         }

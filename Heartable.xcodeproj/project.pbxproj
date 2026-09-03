@@ -58,6 +58,7 @@
 		5B6CDBEFAAA037A0DACACEC3 /* ProviderCatalogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 212E78E7477F20617CDF0D0E /* ProviderCatalogTests.swift */; };
 		5BFB1881613436A7CD1019A5 /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = D24DC5B96BF927808116BD55 /* AppConfig.swift */; };
 		5D239FAD7B8BB9ED0F3F420E /* DMSans_600SemiBold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E673B2646B4446139B6ABF96 /* DMSans_600SemiBold.ttf */; };
+		5D5B7BBCB81FD4939A7EBEB7 /* BackupSnapshotDifferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB4C79B34593FA538C8141AE /* BackupSnapshotDifferTests.swift */; };
 		5DCB47900B5A0BFEAB11ECE2 /* MasterLibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08158489F86385193980C434 /* MasterLibraryStore.swift */; };
 		61532AEBA265B5D5706A5689 /* DiscoverStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA98C7551D3037E79563A2B1 /* DiscoverStore.swift */; };
 		62098C9673473D4905F77E31 /* MeStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33206A79A4AC2DD386FED30D /* MeStore.swift */; };
@@ -360,6 +361,7 @@
 		FA64C49483E085BF5E4444AD /* AccountIsolationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountIsolationTests.swift; sourceTree = "<group>"; };
 		FB112A3E51CA435B1F2CA9A3 /* Heartable.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Heartable.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FB4A45E6AB847482D6E28920 /* ListenBrainzProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ListenBrainzProvider.swift; sourceTree = "<group>"; };
+		FB4C79B34593FA538C8141AE /* BackupSnapshotDifferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupSnapshotDifferTests.swift; sourceTree = "<group>"; };
 		FC5D8C6B0B867D6E76E7DB9A /* CSVImportParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CSVImportParserTests.swift; sourceTree = "<group>"; };
 		FD199DFA866C2A1415F6F44C /* FullPlayerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullPlayerView.swift; sourceTree = "<group>"; };
 		FDA91DA7F051584FB0A5AE5F /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
@@ -721,6 +723,7 @@
 				FA64C49483E085BF5E4444AD /* AccountIsolationTests.swift */,
 				BDD2E9B5CF8F1321485133D1 /* AppIconCatalogTests.swift */,
 				4947D01A0C1321BF2B932AB7 /* ArtworkDiskCacheTests.swift */,
+				FB4C79B34593FA538C8141AE /* BackupSnapshotDifferTests.swift */,
 				FC5D8C6B0B867D6E76E7DB9A /* CSVImportParserTests.swift */,
 				75CDE8C04C5C48C66122D9C9 /* FriendProfileMusicConnectionTests.swift */,
 				16FA6F667A57A4DB9A9E1D23 /* HeartableNotificationTests.swift */,
@@ -952,6 +955,7 @@
 				96BFEBF5AC01A384AF6CDB7F /* AccountIsolationTests.swift in Sources */,
 				05A2B611E153F9972D6994E6 /* AppIconCatalogTests.swift in Sources */,
 				151D0DE3DDF33B424FA036F7 /* ArtworkDiskCacheTests.swift in Sources */,
+				5D5B7BBCB81FD4939A7EBEB7 /* BackupSnapshotDifferTests.swift in Sources */,
 				3AD1AB006A19719D45B36E3C /* CSVImportParserTests.swift in Sources */,
 				DF4F5D27AD04A5AFA8CD37B7 /* FriendProfileMusicConnectionTests.swift in Sources */,
 				A0E4AE4FE9365A64EFECA800 /* HeartableNotificationTests.swift in Sources */,
@@ -1196,7 +1200,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 43;
+				CURRENT_PROJECT_VERSION = 44;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 28LJG7MXT3;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -1320,7 +1324,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 43;
+				CURRENT_PROJECT_VERSION = 44;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 28LJG7MXT3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
