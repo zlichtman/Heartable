@@ -15,6 +15,52 @@ struct HeartableChoiceItem: Identifiable {
     var isDisabled = false
 }
 
+/// The only dismissal affordance used by Heartable-owned sheets. Navigation
+/// pushes use a back chevron; presentations use this down chevron. Text Close,
+/// xmarks, and mixed arrow weights are intentionally excluded.
+struct HeartableSheetDismissButton: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var accessibilityLabel = "Dismiss"
+    var drawsSurface = false
+    var action: (() -> Void)?
+
+    var body: some View {
+        HeartableNavigationButton(
+            kind: .dismiss,
+            accessibilityLabel: accessibilityLabel,
+            drawsSurface: drawsSurface,
+            action: action ?? dismiss.callAsFunction
+        )
+    }
+}
+
+/// Standard presentation chrome. It keeps every Heartable-owned drawer on the
+/// active theme and, crucially, hosts notifications above the sheet rather than
+/// behind it in the app shell.
+private struct HeartableSheetChrome: ViewModifier {
+    @Environment(ThemeStore.self) private var theme
+    @Environment(BannerCenter.self) private var notifications
+
+    let dragIndicator: Visibility
+
+    func body(content: Content) -> some View {
+        content
+            .heartableNotificationHost(notifications)
+            .presentationBackground(theme.palette.bg)
+            .presentationCornerRadius(30)
+            .presentationDragIndicator(dragIndicator)
+    }
+}
+
+extension View {
+    func heartableSheetChrome(
+        dragIndicator: Visibility = .visible
+    ) -> some View {
+        modifier(HeartableSheetChrome(dragIndicator: dragIndicator))
+    }
+}
+
 /// Theme-owned replacement for app action menus. Native Photos, Files, Camera,
 /// AirPlay, and share controllers remain system-owned after the user chooses one.
 struct HeartableChoiceSheet: View {
@@ -36,9 +82,7 @@ struct HeartableChoiceSheet: View {
         }
         .background(theme.palette.bg.ignoresSafeArea())
         .presentationSizing(.fitted)
-        .presentationBackground(theme.palette.bg)
-        .presentationDragIndicator(.visible)
-        .presentationCornerRadius(30)
+        .heartableSheetChrome()
         .accessibilityAction(.escape, onCancel)
     }
 
@@ -57,15 +101,11 @@ struct HeartableChoiceSheet: View {
                     }
                 }
                 Spacer(minLength: 8)
-                Button(action: onCancel) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(theme.palette.textSecondary)
-                        .frame(width: 44, height: 44)
-                        .background(theme.palette.surface, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close")
+                HeartableSheetDismissButton(
+                    accessibilityLabel: "Dismiss \(title)",
+                    drawsSurface: true,
+                    action: onCancel
+                )
             }
 
             VStack(spacing: 9) {
@@ -255,9 +295,7 @@ struct HeartablePromptSheet: View {
         .background(theme.palette.bg.ignoresSafeArea())
         .interactiveDismissDisabled(isBusy)
         .presentationSizing(.fitted)
-        .presentationBackground(theme.palette.bg)
-        .presentationDragIndicator(.visible)
-        .presentationCornerRadius(30)
+        .heartableSheetChrome()
         .task { focused = true }
         .accessibilityAction(.escape) {
             guard !isBusy else { return }

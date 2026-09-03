@@ -46,6 +46,7 @@ final class MasterLibraryStore {
     // MARK: - Internals
 
     private var didHydrate = false
+    private var lifecycleID = UUID()
     private var didDeepIndex = false
     private var loadedProviders: Set<ProviderID> = []
     private var searchTask: Task<Void, Never>?
@@ -63,14 +64,21 @@ final class MasterLibraryStore {
     func hydrate() async {
         guard !didHydrate else { return }
         didHydrate = true
+        let requestID = lifecycleID
         let snapshot = await Task.detached(priority: .userInitiated) {
             MasterLibrarySnapshot.load()
         }.value
-        guard let snapshot, tracks.isEmpty else { return }
+        guard lifecycleID == requestID, let snapshot, tracks.isEmpty else { return }
+        let hydratedArtists = if snapshot.artists.isEmpty {
+            await Task.detached(priority: .userInitiated) {
+                MasterArtist.aggregate(snapshot.tracks)
+            }.value
+        } else {
+            snapshot.artists
+        }
+        guard lifecycleID == requestID else { return }
         tracks = snapshot.tracks
-        artists = snapshot.artists.isEmpty
-            ? MasterArtist.aggregate(snapshot.tracks)
-            : snapshot.artists
+        artists = hydratedArtists
         lastLoadedAt = snapshot.savedAt
     }
 
@@ -81,7 +89,9 @@ final class MasterLibraryStore {
     /// fresh, the connected set is unchanged, and we already have data (unless
     /// `force`, e.g. pull-to-refresh or a connect/disconnect).
     func load(force: Bool = false) async {
+        let requestID = lifecycleID
         await hydrate()
+        guard lifecycleID == requestID else { return }
 
         let providers = await ProviderRegistry.connected()
         let liveIDs = Set(providers.map(\.id))
@@ -101,9 +111,20 @@ final class MasterLibraryStore {
         async let topFetch = Self.gather(providers) { await $0.topTracks(range: .mediumTerm, limit: 50) }
         async let likedFetch = Self.gather(providers) { await $0.likedTracks(limit: 10_000) }
         let fetched = await topFetch + likedFetch
+        guard lifecycleID == requestID else { return }
 
         loading = false
-        reconcile(fetched: fetched, attempted: liveIDs)
+        let cachedTracks = tracks
+        let projection = await Task.detached(priority: .userInitiated) {
+            Self.reconcile(
+                fetched: fetched,
+                attempted: liveIDs,
+                cachedTracks: cachedTracks
+            )
+        }.value
+        guard lifecycleID == requestID else { return }
+        tracks = projection.tracks
+        artists = projection.artists
         loadedProviders = liveIDs
         lastLoadedAt = Date()
         persist()
@@ -114,9 +135,21 @@ final class MasterLibraryStore {
     /// to every provider; this makes the browse pipeline authoritative and keeps
     /// the master projection as a cheap in-memory reconciliation.
     func adopt(_ sourceTracks: [UnifiedTrack], providerIDs: Set<ProviderID>) async {
+        let requestID = lifecycleID
         await hydrate()
+        guard lifecycleID == requestID else { return }
         if providerIDs != loadedProviders { didDeepIndex = false }
-        reconcile(fetched: sourceTracks, attempted: providerIDs)
+        let cachedTracks = tracks
+        let projection = await Task.detached(priority: .userInitiated) {
+            Self.reconcile(
+                fetched: sourceTracks,
+                attempted: providerIDs,
+                cachedTracks: cachedTracks
+            )
+        }.value
+        guard lifecycleID == requestID else { return }
+        tracks = projection.tracks
+        artists = projection.artists
         loadedProviders = providerIDs
         lastLoadedAt = Date()
         persist()
@@ -127,21 +160,21 @@ final class MasterLibraryStore {
     /// never drops sources, and re-runs after a provider set change. Mixtapes are
     /// skipped (their tracks already reference underlying provider tracks).
     func deepIndex(playlists: [UnifiedPlaylist]) async {
+        let requestID = lifecycleID
         guard !didDeepIndex else { return }
         let providerPlaylists = playlists.filter { !$0.isMixtape }
         guard !providerPlaylists.isEmpty else { return }
         didDeepIndex = true
 
         let fetched = await Self.gatherPlaylistTracks(providerPlaylists, maxConcurrent: 6)
-
-        var dict: [String: MasterTrack] = [:]
-        for track in tracks { for source in track.sources { MasterTrack.insert(source, into: &dict) } }
-        for (_, playlistTracks) in fetched {
-            for source in playlistTracks { MasterTrack.insert(source, into: &dict) }
-        }
-        let merged = Array(dict.values)
-        tracks = merged
-        artists = MasterArtist.aggregate(merged)
+        guard lifecycleID == requestID else { return }
+        let cachedTracks = tracks
+        let projection = await Task.detached(priority: .userInitiated) {
+            Self.deepProjection(cachedTracks: cachedTracks, fetched: fetched)
+        }.value
+        guard lifecycleID == requestID else { return }
+        tracks = projection.tracks
+        artists = projection.artists
         persist()
     }
 
@@ -154,10 +187,19 @@ final class MasterLibraryStore {
     ///    transient failure: its cached sources are kept (non-empty-wins).
     ///  - A provider that is NO LONGER CONNECTED is dropped entirely.
     ///  - A master track left with no sources disappears.
-    private func reconcile(fetched: [UnifiedTrack], attempted: Set<ProviderID>) {
+    private struct LibraryProjection: Sendable {
+        let tracks: [MasterTrack]
+        let artists: [MasterArtist]
+    }
+
+    private nonisolated static func reconcile(
+        fetched: [UnifiedTrack],
+        attempted: Set<ProviderID>,
+        cachedTracks: [MasterTrack]
+    ) -> LibraryProjection {
         let returned = Set(fetched.map(\.providerID))
         let cachedByKey = Dictionary(
-            tracks.flatMap(\.sources).map { ($0.key, $0) },
+            cachedTracks.flatMap(\.sources).map { ($0.key, $0) },
             uniquingKeysWith: { first, _ in first }
         )
 
@@ -169,7 +211,7 @@ final class MasterLibraryStore {
             )
         }
 
-        for old in tracks {
+        for old in cachedTracks {
             for source in old.sources {
                 let provider = source.providerID
                 // Keep only cached sources from a connected provider that failed
@@ -181,8 +223,28 @@ final class MasterLibraryStore {
         }
 
         let merged = Array(dict.values)
-        tracks = merged
-        artists = MasterArtist.aggregate(merged)
+        return LibraryProjection(
+            tracks: merged,
+            artists: MasterArtist.aggregate(merged)
+        )
+    }
+
+    private nonisolated static func deepProjection(
+        cachedTracks: [MasterTrack],
+        fetched: [(UnifiedPlaylist, [UnifiedTrack])]
+    ) -> LibraryProjection {
+        var dict: [String: MasterTrack] = [:]
+        for track in cachedTracks {
+            for source in track.sources { MasterTrack.insert(source, into: &dict) }
+        }
+        for (_, playlistTracks) in fetched {
+            for source in playlistTracks { MasterTrack.insert(source, into: &dict) }
+        }
+        let merged = Array(dict.values)
+        return LibraryProjection(
+            tracks: merged,
+            artists: MasterArtist.aggregate(merged)
+        )
     }
 
     private func persist() {
@@ -503,6 +565,7 @@ final class MasterLibraryStore {
 
     /// Forget everything (call on sign-out / account switch).
     func reset() {
+        lifecycleID = UUID()
         searchTask?.cancel()
         searchTask = nil
         tracks = []
@@ -513,5 +576,7 @@ final class MasterLibraryStore {
         loadedProviders = []
         lastLoadedAt = nil
         didDeepIndex = false
+        didHydrate = false
+        searchedWithNoProviders = false
     }
 }

@@ -102,6 +102,11 @@ The library is cache-first and stale-while-revalidate:
 3. Apply a coherent replacement only when data changed.
 4. Keep the last good snapshot when a provider request fails.
 
+`LibrarySessionStore` owns Home library state above the tab hierarchy. Home
+navigation must never own or await playlist traversal or artist aggregation;
+tab selection renders cached core content while derived indexes reconcile in
+the authenticated app shell.
+
 The first authoritative provider sync must traverse the full playlist library
 so artist/song indexes are accurate. Subsequent loads should use change
 metadata and targeted refreshes. Never mix data between accounts.
@@ -148,8 +153,13 @@ Photo Library, Camera, and Files.
 - Prefer the warmer Library/Profile visual language for playlist detail,
   listening history, friend profiles, and account surfaces.
 - Use shared back/down controls and consistent full-player/lyrics dismissal.
-- Use in-app banners/toasts for non-destructive feedback and a single centered
-  confirmation component for destructive or account actions.
+- Route all transient feedback through `BannerCenter` as an app-wide Heartable
+  notification. Never add screen-local toasts, snackbars, or duplicate playback
+  feedback. Presented sheets must host notifications above their own surface.
+- Navigation pushes use the shared back chevron. Heartable-owned sheets use the
+  shared down-chevron dismissal; do not introduce text Close buttons or xmarks.
+  Use `heartableSheetChrome` for theme coverage and presentation geometry.
+- Use a single centered confirmation component for destructive or account actions.
 - Every icon-only control needs an accessibility label and a minimum 44-point
   hit target.
 - Loading should preserve useful cached content. Avoid splash loops,

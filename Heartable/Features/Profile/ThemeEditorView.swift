@@ -81,9 +81,10 @@ struct ThemeEditorView: View {
             .navigationTitle(editing.name.isEmpty ? "New Theme" : "Edit Theme")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .foregroundStyle(theme.palette.textSecondary)
+                ToolbarItem(placement: .topBarLeading) {
+                    HeartableSheetDismissButton(
+                        accessibilityLabel: "Dismiss theme editor"
+                    )
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Save") { save() }
@@ -112,7 +113,7 @@ struct ThemeEditorView: View {
         }
         .sensoryFeedback(.selection, trigger: selectedSlot)
         .sensoryFeedback(.selection, trigger: quickColorSelectionRevision)
-        .presentationBackground(theme.palette.bg)
+        .heartableSheetChrome()
         .onDisappear { washTask?.cancel() }
     }
 
@@ -137,20 +138,20 @@ struct ThemeEditorView: View {
         Button(role: .destructive) {
             confirmingDelete = true
         } label: {
-            Label("Delete Theme", systemImage: "trash")
+            Label("Delete theme", systemImage: "trash")
                 .font(Typography.semibold(15))
                 .frame(maxWidth: .infinity)
                 .frame(minHeight: 50)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.red)
+        .foregroundStyle(theme.palette.danger)
         .background(
             RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
                 .fill(theme.palette.card)
         )
         .overlay {
             RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
-                .stroke(Color.red.opacity(0.35), lineWidth: 1)
+                .stroke(theme.palette.danger.opacity(0.35), lineWidth: 1)
         }
         .accessibilityHint("Permanently removes this custom theme")
     }

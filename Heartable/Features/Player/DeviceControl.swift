@@ -128,10 +128,13 @@ struct SpotifyDevicePickerSheet: View {
                     .accessibilityLabel("Refresh devices")
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    HeartableToolbarAction(title: "Close") { dismiss() }
+                    HeartableSheetDismissButton(
+                        accessibilityLabel: "Dismiss device picker"
+                    )
                 }
             }
         }
+        .heartableSheetChrome()
         .task { await load() }
     }
 

@@ -53,6 +53,7 @@ struct FullPlayerView: View {
                     LyricsSheet(now: now)
                         .environment(theme)
                         .environment(player)
+                        .heartableSheetChrome(dragIndicator: .hidden)
                 }
             } else {
                 idlePlayer

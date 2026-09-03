@@ -275,11 +275,14 @@ private struct PasswordRecoveryView: View {
             .padding(24)
             .background(theme.palette.bg.ignoresSafeArea())
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    HeartableToolbarAction(title: "Close") { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    HeartableSheetDismissButton(
+                        accessibilityLabel: "Dismiss password recovery"
+                    )
                 }
             }
         }
+        .heartableSheetChrome()
     }
 
     private func send() {

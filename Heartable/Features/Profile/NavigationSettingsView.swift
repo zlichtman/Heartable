@@ -266,8 +266,10 @@ private struct ThemePickerSheet: View {
             .navigationTitle("Choose a Theme")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    HeartableToolbarAction(title: "Close") { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    HeartableSheetDismissButton(
+                        accessibilityLabel: "Dismiss theme picker"
+                    )
                 }
             }
         }
@@ -281,8 +283,7 @@ private struct ThemePickerSheet: View {
         .sheet(item: $editingTheme) { ThemeEditorView(editing: $0) }
         .sensoryFeedback(.selection, trigger: theme.currentKey)
         .presentationDetents([.large])
-        .presentationBackground(theme.palette.bg)
-        .presentationDragIndicator(.visible)
+        .heartableSheetChrome()
         .onDisappear { washTask?.cancel() }
     }
 

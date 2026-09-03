@@ -90,7 +90,7 @@ struct FriendProfileView: View {
                 createdMixtapeID = mixtapeID
             }
             .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+            .heartableSheetChrome()
         }
         .sheet(isPresented: $confirmingRemoveFriend) {
             HeartableDestructiveConfirmation(

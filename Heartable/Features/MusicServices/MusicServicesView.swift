@@ -32,10 +32,14 @@ struct MusicServicesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await providers.refresh() }
         .sheet(item: $setupEntry) { entry in
-            ServiceSetupSheet(entry: entry).presentationDetents([.medium, .large])
+            ServiceSetupSheet(entry: entry)
+                .presentationDetents([.medium, .large])
+                .heartableSheetChrome()
         }
         .sheet(isPresented: $jellyfinSheetShown) {
-            JellyfinConnectSheet().presentationDetents([.medium, .large])
+            JellyfinConnectSheet()
+                .presentationDetents([.medium, .large])
+                .heartableSheetChrome()
         }
         .sheet(isPresented: $lastfmPromptShown) {
             HeartablePromptSheet(
@@ -272,7 +276,7 @@ private struct ServiceSetupSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
                     ProviderBadge(id: entry.id, size: 44, connected: true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(entry.label).font(Typography.heading(22))
@@ -280,6 +284,11 @@ private struct ServiceSetupSheet: View {
                         Text(statusLabel).font(Typography.semibold(12))
                             .foregroundStyle(theme.palette.textMuted)
                     }
+                    Spacer(minLength: 8)
+                    HeartableSheetDismissButton(
+                        accessibilityLabel: "Dismiss \(entry.label) setup",
+                        drawsSurface: true
+                    )
                 }
 
                 Text(entry.blurb)

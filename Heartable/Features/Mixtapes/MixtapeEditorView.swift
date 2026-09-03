@@ -384,11 +384,14 @@ private struct AddTracksSheet: View {
             .onSubmit(of: .search) { Task { await runSearch() } }
             .task(id: query) { await runSearch() }
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    HeartableToolbarAction(title: "Close") { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    HeartableSheetDismissButton(
+                        accessibilityLabel: "Dismiss song search"
+                    )
                 }
             }
         }
+        .heartableSheetChrome()
     }
 
     private func runSearch() async {
@@ -462,12 +465,15 @@ private struct ShareMixtapeSheet: View {
             .navigationTitle("Share")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    HeartableToolbarAction(title: "Close") { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    HeartableSheetDismissButton(
+                        accessibilityLabel: "Dismiss sharing"
+                    )
                 }
             }
             .task { await load() }
         }
+        .heartableSheetChrome()
     }
 
     private func friendRow(_ f: FriendDTO, friendID: UUID) -> some View {

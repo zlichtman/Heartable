@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// App-wide, Apple-style feedback banners. Inject `BannerCenter` into the
-/// environment and call `banners.success("…")` / `.error("…")` / `.info("…")`
-/// from anywhere; a single host overlay (see `bannerHost`) renders the current
-/// banner sliding in from the top and auto-dismisses it.
+/// App-wide Heartable notifications. Every short-lived success, error, and
+/// informational message enters this one queue instead of being rendered as a
+/// screen-local toast. Hosts are attached to both the app shell and presented
+/// sheets so the active notification is always above the surface being used.
 @MainActor
 @Observable
 final class BannerCenter {
@@ -25,13 +25,31 @@ final class BannerCenter {
     }
 
     private(set) var current: Banner?
+    private var pending: [Banner] = []
     private var dismissTask: Task<Void, Never>?
+    private var advanceTask: Task<Void, Never>?
 
     func show(_ message: String, style: Style = .info) {
-        current = Banner(message: message, style: style)
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let banner = Banner(message: trimmed, style: style)
+        guard current == nil, advanceTask == nil else {
+            // Avoid stacking the same provider error several times when two
+            // refresh paths finish together.
+            if current?.message != banner.message,
+               pending.last?.message != banner.message {
+                pending.append(banner)
+            }
+            return
+        }
+        present(banner)
+    }
+
+    private func present(_ banner: Banner) {
+        current = banner
         dismissTask?.cancel()
         dismissTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(style == .error ? 3.5 : 2.4))
+            try? await Task.sleep(for: .seconds(banner.style == .error ? 4.2 : 2.8))
             guard !Task.isCancelled else { return }
             self?.dismiss()
         }
@@ -43,7 +61,17 @@ final class BannerCenter {
 
     func dismiss() {
         dismissTask?.cancel()
+        dismissTask = nil
         current = nil
+        guard !pending.isEmpty else { return }
+        let next = pending.removeFirst()
+        advanceTask?.cancel()
+        advanceTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(180))
+            guard !Task.isCancelled else { return }
+            self?.advanceTask = nil
+            self?.present(next)
+        }
     }
 }
 
@@ -73,12 +101,12 @@ private struct BannerHost: ViewModifier {
             Text(banner.message)
                 .font(Typography.semibold(14))
                 .foregroundStyle(theme.palette.text)
-                .lineLimit(2)
+                .lineLimit(3)
             Spacer(minLength: 4)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: 560, alignment: .leading)
         .background(theme.palette.bgElevated, in: RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Theme.Radius.md, style: .continuous)
@@ -89,7 +117,7 @@ private struct BannerHost: ViewModifier {
 
     private func tint(_ style: BannerCenter.Style) -> Color {
         switch style {
-        case .success: .green
+        case .success: theme.palette.emerald
         case .error: theme.palette.danger
         case .info: theme.palette.rose
         }
@@ -97,8 +125,14 @@ private struct BannerHost: ViewModifier {
 }
 
 extension View {
-    /// Hosts the app-wide feedback banners at the top of this view.
-    func bannerHost(_ center: BannerCenter) -> some View {
+    /// Hosts app-wide Heartable notifications at the top of this presentation.
+    func heartableNotificationHost(_ center: BannerCenter) -> some View {
         modifier(BannerHost(center: center))
+    }
+
+    /// Compatibility for older call sites while notification terminology becomes
+    /// the sole product language.
+    func bannerHost(_ center: BannerCenter) -> some View {
+        heartableNotificationHost(center)
     }
 }

@@ -444,13 +444,15 @@ struct SharedMixtapeComposerSheet: View {
             .navigationTitle("New mixtape")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .tint(theme.palette.rose)
+                ToolbarItem(placement: .topBarLeading) {
+                    HeartableSheetDismissButton(
+                        accessibilityLabel: "Dismiss mixtape composer"
+                    )
                 }
             }
             .task { titleFocused = true }
         }
+        .heartableSheetChrome()
     }
 
     private var normalizedTitle: String {

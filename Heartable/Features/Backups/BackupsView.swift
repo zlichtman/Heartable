@@ -826,15 +826,11 @@ private struct BackupActionsSheet: View {
                         .foregroundStyle(theme.palette.textSecondary)
                 }
                 Spacer(minLength: 8)
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(theme.palette.textSecondary)
-                        .frame(width: 44, height: 44)
-                        .background(theme.palette.surface, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close")
+                HeartableSheetDismissButton(
+                    accessibilityLabel: "Dismiss backup actions",
+                    drawsSurface: true,
+                    action: onClose
+                )
             }
 
             VStack(spacing: 9) {
@@ -876,9 +872,7 @@ private struct BackupActionsSheet: View {
         .frame(maxWidth: .infinity, alignment: .top)
         .background(theme.palette.bg.ignoresSafeArea())
         .presentationSizing(.fitted)
-        .presentationBackground(theme.palette.bg)
-        .presentationDragIndicator(.visible)
-        .presentationCornerRadius(30)
+        .heartableSheetChrome()
         .accessibilityAction(.escape, onClose)
     }
 

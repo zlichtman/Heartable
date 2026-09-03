@@ -83,6 +83,7 @@ final class LibraryStore {
     }
 
     private var didHydrate = false
+    private var lifecycleID = UUID()
     private var cachedAt: Date?
     private var loadedProviders: Set<ProviderID>?
     private let cacheIO = CacheIO()
@@ -94,15 +95,30 @@ final class LibraryStore {
     func hydrate() async {
         guard !didHydrate else { return }
         didHydrate = true
-        artistImageCache = await ArtworkDiskCache.shared.artistImageURLs()
-        guard let cache = await cacheIO.load(from: Self.cacheURL) else { return }
+        let requestID = lifecycleID
+        async let cachedImageLookup = ArtworkDiskCache.shared.artistImageURLs()
+        guard let cache = await cacheIO.load(from: Self.cacheURL),
+              lifecycleID == requestID else { return }
+
+        // Publish the useful Home payload before doing any artist aggregation.
+        // This is the important latency boundary: playlist tiles and liked songs
+        // must never wait for the derived Artists view.
         topTracks = cache.top
         likedTracks = cache.liked
         playlists = cache.playlists
-        artists = aggregateArtists(topTracks + likedTracks)
         cachedAt = cache.savedAt
         loadedProviders = cache.providerIDs
         warmVisibleArtwork()
+
+        let images = await cachedImageLookup
+        guard lifecycleID == requestID else { return }
+        artistImageCache = images
+        let cachedImages = artistImageCache
+        let cachedArtists = await Task.detached(priority: .userInitiated) {
+            Self.aggregateArtists(cache.top + cache.liked, cachedImages: cachedImages)
+        }.value
+        guard lifecycleID == requestID else { return }
+        artists = cachedArtists
     }
 
     func loadAll(force: Bool = false) async {
@@ -113,7 +129,9 @@ final class LibraryStore {
     /// Refresh using the already-probed provider list from `ProvidersStore`.
     /// This avoids probing every adapter a second time merely to start a load.
     func loadAll(providers: [MusicProvider], force: Bool = false) async {
+        let requestID = lifecycleID
         await hydrate()
+        guard lifecycleID == requestID else { return }
 
         let providerIDs = Set(providers.map(\.id))
         if !force,
@@ -143,6 +161,7 @@ final class LibraryStore {
         let mixtapeList = await tapes
         let mixtapes = (mixtapeList.mine + mixtapeList.shared).map(Self.mapMixtape)
         let freshProviderPlaylists = await pls
+        guard lifecycleID == requestID else { return }
 
         // Non-empty wins: never overwrite good cached data with an empty result
         // (an empty fetch almost always means a transient token/network failure,
@@ -176,7 +195,12 @@ final class LibraryStore {
             }
         }
 
-        artists = aggregateArtists(topTracks + likedTracks)
+        let refreshedTracks = topTracks + likedTracks
+        let cachedImages = artistImageCache
+        artists = await Task.detached(priority: .userInitiated) {
+            Self.aggregateArtists(refreshedTracks, cachedImages: cachedImages)
+        }.value
+        guard lifecycleID == requestID else { return }
         // The playlist catalog may carry new content revisions or track counts.
         // The shared repository reconciles those immediately after this metadata
         // pass and then rebuilds the artist projection.
@@ -234,8 +258,8 @@ final class LibraryStore {
     /// Rebuild the artist projection immediately from already-persisted playlist
     /// content. Called during hydration so cached artist songs appear before the
     /// network change check completes.
-    func restoreArtistIndex(from repository: PlaylistTracksRepository) {
-        rebuildArtistIndex(from: repository)
+    func restoreArtistIndex(from repository: PlaylistTracksRepository) async {
+        await rebuildArtistIndex(from: repository)
     }
 
     /// Ensures the playlist cache is authoritative, then rebuilds the library-wide
@@ -245,28 +269,51 @@ final class LibraryStore {
         using repository: PlaylistTracksRepository,
         force: Bool = false
     ) async {
+        let requestID = lifecycleID
         if indexingArtists { return }
         indexingArtists = true
         defer { indexingArtists = false }
 
         await repository.synchronize(playlists, force: force)
-        rebuildArtistIndex(from: repository)
+        guard lifecycleID == requestID else { return }
+        await rebuildArtistIndex(from: repository)
+        guard lifecycleID == requestID else { return }
         await enrichArtistImages()
     }
 
-    private func rebuildArtistIndex(from repository: PlaylistTracksRepository) {
-        var entries: [LibraryEntry] = (likedTracks + topTracks).map {
-            LibraryEntry(track: $0, playlist: nil)
-        }
+    /// Forget all account-owned state and invalidate work that began for a prior
+    /// Heartable account. The instance itself remains stable for SwiftUI.
+    func reset() {
+        lifecycleID = UUID()
+        topTracks = []
+        likedTracks = []
+        playlists = []
+        artists = []
+        libraryTracks = []
+        loading = false
+        refreshing = false
+        indexingArtists = false
+        didBuildArtistIndex = false
+        didHydrate = false
+        cachedAt = nil
+        loadedProviders = nil
+        artistImageCache = [:]
+    }
 
-        for content in repository.cachedContents(for: playlists) {
-            for track in content.tracks {
-                entries.append(LibraryEntry(track: track, playlist: content.playlist))
-            }
-        }
+    private func rebuildArtistIndex(from repository: PlaylistTracksRepository) async {
+        let baseTracks = likedTracks + topTracks
+        let cachedContents = repository.cachedContents(for: playlists)
+        let cachedImages = artistImageCache
+        let projection = await Task.detached(priority: .userInitiated) {
+            Self.makeArtistProjection(
+                baseTracks: baseTracks,
+                playlistContents: cachedContents,
+                cachedImages: cachedImages
+            )
+        }.value
 
-        libraryTracks = entries
-        artists = aggregateArtists(entries.map(\.track))
+        libraryTracks = projection.entries
+        artists = projection.artists
         didBuildArtistIndex = repository.hasResolvedAll(playlists)
     }
 
@@ -341,7 +388,11 @@ final class LibraryStore {
 
         let tracks = dedupeTracks(await foundTracks)
         let matchingPlaylists = playlists.filter { $0.name.localizedCaseInsensitiveContains(q) }
-        let artistMatches = aggregateArtists(tracks).filter { $0.name.localizedCaseInsensitiveContains(q) }
+        let cachedImages = artistImageCache
+        let artistMatches = await Task.detached(priority: .userInitiated) {
+            Self.aggregateArtists(tracks, cachedImages: cachedImages)
+                .filter { $0.name.localizedCaseInsensitiveContains(q) }
+        }.value
         return SearchResults(tracks: tracks, playlists: matchingPlaylists,
                              artists: artistMatches, people: await people)
     }
@@ -372,7 +423,32 @@ final class LibraryStore {
         return tracks.filter { seen.insert($0.key).inserted }
     }
 
-    private func aggregateArtists(_ tracks: [UnifiedTrack]) -> [ArtistAgg] {
+    private struct ArtistProjection: Sendable {
+        let entries: [LibraryEntry]
+        let artists: [ArtistAgg]
+    }
+
+    private nonisolated static func makeArtistProjection(
+        baseTracks: [UnifiedTrack],
+        playlistContents: [(playlist: UnifiedPlaylist, tracks: [UnifiedTrack])],
+        cachedImages: [String: URL]
+    ) -> ArtistProjection {
+        var entries = baseTracks.map { LibraryEntry(track: $0, playlist: nil) }
+        for content in playlistContents {
+            entries.append(contentsOf: content.tracks.map {
+                LibraryEntry(track: $0, playlist: content.playlist)
+            })
+        }
+        return ArtistProjection(
+            entries: entries,
+            artists: aggregateArtists(entries.map(\.track), cachedImages: cachedImages)
+        )
+    }
+
+    private nonisolated static func aggregateArtists(
+        _ tracks: [UnifiedTrack],
+        cachedImages: [String: URL]
+    ) -> [ArtistAgg] {
         var map: [String: ArtistAgg] = [:]
         var songsByArtist: [String: Set<String>] = [:]
         let stableTracks = tracks.sorted { lhs, rhs in
@@ -417,7 +493,13 @@ final class LibraryStore {
         // Apply any real artist photos already fetched this session (album art is
         // the fallback until/unless a photo exists).
         return map.values
-            .map { applyCachedImage($0) }
+            .map { artist in
+                guard let spotifyID = artist.spotifyArtistID,
+                      let image = cachedImages[spotifyID] else { return artist }
+                var enriched = artist
+                enriched.artURL = image
+                return enriched
+            }
             .sorted { $0.count > $1.count }
     }
 

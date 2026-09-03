@@ -584,9 +584,7 @@ private struct FindTab: View {
         .padding(.bottom, 24)
         .background(theme.palette.bg.ignoresSafeArea())
         .presentationSizing(.fitted)
-        .presentationBackground(theme.palette.bg)
-        .presentationDragIndicator(.visible)
-        .presentationCornerRadius(30)
+        .heartableSheetChrome()
     }
 
     private func incomingRow(_ req: FriendDTO) -> some View {

@@ -73,8 +73,12 @@ struct ListeningHistoryView: View {
                     Image(systemName: "trash")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(theme.palette.rose)
-                        .frame(width: 32, height: 32)
-                        .background(theme.palette.roseDim, in: Circle())
+                        .frame(width: 44, height: 44)
+                        .background(
+                            Circle()
+                                .fill(theme.palette.roseDim)
+                                .frame(width: 32, height: 32)
+                        )
                 }
                 .disabled(history.isEmpty)
                 .accessibilityLabel("Clear listening history")
@@ -280,9 +284,7 @@ private struct GhostModeDurationSheet: View {
         }
         .background(theme.palette.bg.ignoresSafeArea())
         .presentationSizing(.fitted)
-        .presentationBackground(theme.palette.bg)
-        .presentationDragIndicator(.visible)
-        .presentationCornerRadius(30)
+        .heartableSheetChrome()
     }
 
     private var content: some View {
@@ -310,17 +312,10 @@ private struct GhostModeDurationSheet: View {
 
                 Spacer(minLength: 4)
 
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(theme.palette.textSecondary)
-                        .frame(width: 44, height: 44)
-                        .background(theme.palette.surface, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Close")
+                HeartableSheetDismissButton(
+                    accessibilityLabel: "Dismiss Ghost Mode options",
+                    drawsSurface: true
+                )
             }
 
             VStack(spacing: 9) {

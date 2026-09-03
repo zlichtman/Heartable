@@ -14,6 +14,7 @@ struct RootView: View {
     @Environment(SkipStore.self) private var skips
     @Environment(TopTracksRepository.self) private var topTracks
     @Environment(PlaylistTracksRepository.self) private var playlistTracks
+    @Environment(LibrarySessionStore.self) private var librarySession
     @Environment(ChatStore.self) private var chats
     @Environment(FriendActivityRepository.self) private var friendActivity
     @Environment(WeeklyRecapStore.self) private var weeklyRecap
@@ -96,6 +97,7 @@ struct RootView: View {
                 skips.reset()
                 topTracks.reset()
                 playlistTracks.reset()
+                librarySession.reset()
                 chats.reset()
                 friendActivity.reset()
                 weeklyRecap.reset()

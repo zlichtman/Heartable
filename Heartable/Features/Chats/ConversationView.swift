@@ -323,9 +323,6 @@ private struct AttachmentCard: View {
         guard message.kind == .song, let track = playableTrack else { return }
         Task {
             await player.play(track)
-            if let feedback = player.feedbackMessage {
-                banners.error(feedback)
-            }
         }
     }
 

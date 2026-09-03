@@ -18,6 +18,7 @@ struct HeartableApp: App {
     @State private var backupScheduler = BackupScheduler()
     @State private var topTracks = TopTracksRepository()
     @State private var playlistTracks = PlaylistTracksRepository()
+    @State private var librarySession = LibrarySessionStore()
     @State private var chats = ChatStore()
     @State private var friendActivity = FriendActivityRepository()
     @State private var weeklyRecap = WeeklyRecapStore()
@@ -45,10 +46,10 @@ struct HeartableApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                // bannerHost reads ThemeStore from the environment, so it must be
+                // The notification host reads ThemeStore from the environment, so it must be
                 // applied BEFORE the .environment injections (which wrap it as the
                 // parent) — otherwise it can't find ThemeStore and crashes on launch.
-                .bannerHost(banners)
+                .heartableNotificationHost(banners)
                 .environment(theme)
                 .environment(auth)
                 .environment(providers)
@@ -64,6 +65,7 @@ struct HeartableApp: App {
                 .environment(backupScheduler)
                 .environment(topTracks)
                 .environment(playlistTracks)
+                .environment(librarySession)
                 .environment(chats)
                 .environment(friendActivity)
                 .environment(weeklyRecap)

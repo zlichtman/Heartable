@@ -10,18 +10,20 @@ struct LibraryView: View {
     @Environment(LibrarySortStore.self) private var sortStore
     @Environment(ProvidersStore.self) private var providers
     @Environment(PlaylistTracksRepository.self) private var playlistTracks
+    @Environment(LibrarySessionStore.self) private var librarySession
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// Owned by AppTabView so re-tapping the Library tab pops back to root.
     @Binding var navPath: NavigationPath
 
-    @State private var store = LibraryStore()
     @State private var showCustomReorder = false
     @State private var showProviderReorder = false
     @State private var browseMode: BrowseMode = .playlists
     @State private var searchText = ""
-    /// Owns the unified master library + the single federated search.
-    @State private var master = MasterLibraryStore()
+    /// Long-lived, account-scoped stores owned above the tab hierarchy. A Home
+    /// tab rebuild therefore cannot restart hydration or artist indexing.
+    private var store: LibraryStore { librarySession.library }
+    private var master: MasterLibraryStore { librarySession.master }
 
     // Existing folders remain readable; creation is hidden until the backend
     // workflow is reliable enough to ship.
@@ -66,20 +68,6 @@ struct LibraryView: View {
                     avatarUrl: ref.avatarUrl
                 )
             }
-            // Cache hydration can render before the first provider probe finishes.
-            .task {
-                await store.hydrate()
-                await playlistTracks.hydrate()
-                store.restoreArtistIndex(from: playlistTracks)
-                await master.hydrate()
-            }
-            // One provider wave feeds browse and then the master/search projection.
-            // `refreshGeneration` avoids mistaking the initial empty placeholder
-            // for a real disconnected state.
-            .task(id: providers.refreshGeneration) {
-                guard providers.hasRefreshed else { return }
-                await loadLibrary(force: false)
-            }
             .task { await loadFolders() }
             // A single debounced, cancellable federated search owned by the store.
             .onChange(of: searchText) { _, text in
@@ -102,12 +90,10 @@ struct LibraryView: View {
     }
 
     private func loadLibrary(force: Bool) async {
-        let connected = providers.connected
-        await store.loadAll(providers: connected, force: force)
-        await store.loadArtistIndex(using: playlistTracks, force: force)
-        await master.adopt(
-            store.libraryTracks.map(\.track),
-            providerIDs: Set(connected.map(\.id))
+        await librarySession.synchronize(
+            providers: providers.connected,
+            playlistTracks: playlistTracks,
+            force: force
         )
     }
 
@@ -640,11 +626,14 @@ private struct CustomOrderSheet: View {
             .navigationTitle("Custom order")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    HeartableToolbarAction(title: "Close") { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    HeartableSheetDismissButton(
+                        accessibilityLabel: "Dismiss custom order"
+                    )
                 }
             }
         }
+        .heartableSheetChrome()
     }
 }
 
@@ -682,11 +671,14 @@ private struct ProviderOrderSheet: View {
             .navigationTitle("Creator priority")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    HeartableToolbarAction(title: "Close") { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    HeartableSheetDismissButton(
+                        accessibilityLabel: "Dismiss creator priority"
+                    )
                 }
             }
         }
+        .heartableSheetChrome()
     }
 
     private func label(_ id: ProviderID) -> String {

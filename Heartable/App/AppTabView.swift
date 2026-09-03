@@ -16,6 +16,8 @@ struct AppTabView: View {
     @Environment(FriendLinks.self) private var friendLinks
     @Environment(BannerCenter.self) private var banners
     @Environment(WeeklyRecapStore.self) private var weeklyRecap
+    @Environment(LibrarySessionStore.self) private var librarySession
+    @Environment(PlaylistTracksRepository.self) private var playlistTracks
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("heartable.navigation.showNames")
     private var showNavigationNames = false
@@ -45,9 +47,25 @@ struct AppTabView: View {
         playerAttachedTabs
         .sheet(isPresented: $showFullPlayer) {
             FullPlayerView()
+                .heartableSheetChrome(dragIndicator: .hidden)
         }
+        // Cache hydration and provider reconciliation belong to the stable app
+        // shell, not the Home tab. The first stage makes cached content visible;
+        // the provider refresh then triggers the independent sync below.
         .task {
-            await providers.refresh()
+            async let cachedData: Void = librarySession.prepareCachedData(
+                using: playlistTracks
+            )
+            async let providerState: Void = providers.refresh()
+            await cachedData
+            await providerState
+        }
+        .task(id: providers.refreshGeneration) {
+            guard providers.hasRefreshed else { return }
+            await librarySession.synchronize(
+                providers: providers.connected,
+                playlistTracks: playlistTracks
+            )
         }
         .task {
             await weeklyRecap.load()
@@ -195,10 +213,18 @@ struct AppTabView: View {
     /// Tapping the already-selected tab pops it back to its main page.
     private func popToRoot(_ tab: AppTab) {
         switch tab {
-        case .library: libraryPath = NavigationPath()
-        case .discover: discoverPath = NavigationPath()
-        case .profile: profilePath = NavigationPath()
+        // Replacing an already-empty path rebuilds the tab's NavigationStack.
+        // That used to restart Library hydration/index work when the center Home
+        // button was tapped at its root, making a harmless re-tap look frozen on
+        // large libraries. Only mutate a path when there is something to pop.
+        case .library where !libraryPath.isEmpty:
+            libraryPath = NavigationPath()
+        case .discover where !discoverPath.isEmpty:
+            discoverPath = NavigationPath()
+        case .profile where !profilePath.isEmpty:
+            profilePath = NavigationPath()
         case .backups, .chats: break // no nested navigation
+        case .library, .discover, .profile: break
         }
     }
 }

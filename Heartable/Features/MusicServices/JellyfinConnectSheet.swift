@@ -18,7 +18,7 @@ struct JellyfinConnectSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 12) {
+                HStack(alignment: .top, spacing: 12) {
                     ProviderBadge(id: .jellyfin, size: 44, connected: true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Connect Jellyfin").font(Typography.heading(22))
@@ -27,6 +27,11 @@ struct JellyfinConnectSheet: View {
                             .font(Typography.semibold(12))
                             .foregroundStyle(theme.palette.textMuted)
                     }
+                    Spacer(minLength: 8)
+                    HeartableSheetDismissButton(
+                        accessibilityLabel: "Dismiss Jellyfin setup",
+                        drawsSurface: true
+                    )
                 }
 
                 Text("Enter your Jellyfin server address and account. Full tracks stream straight from your server and play right in the app.")
@@ -42,7 +47,7 @@ struct JellyfinConnectSheet: View {
                 if let error {
                     Text(error)
                         .font(Typography.body(13))
-                        .foregroundStyle(.red)
+                        .foregroundStyle(theme.palette.danger)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
 

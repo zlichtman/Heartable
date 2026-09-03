@@ -185,8 +185,6 @@ struct HeartableDestructiveConfirmation: View {
             onCancel()
         }
         .presentationSizing(.fitted)
-        .presentationBackground(theme.palette.bg)
-        .presentationDragIndicator(.visible)
-        .presentationCornerRadius(30)
+        .heartableSheetChrome()
     }
 }
