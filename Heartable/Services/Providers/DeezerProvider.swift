@@ -71,8 +71,7 @@ struct DeezerProvider: MusicProvider {
         guard let preview = full?.preview, !preview.isEmpty, let url = URL(string: preview) else {
             throw ProviderError("No preview available for this Deezer track.")
         }
-        await MainActor.run {
-            LocalAudioEngine.shared.play(
+        try await LocalAudioEngine.shared.play(
                 .init(
                     key: track.key,
                     providerID: .deezer,
@@ -81,11 +80,10 @@ struct DeezerProvider: MusicProvider {
                     name: track.name,
                     artist: track.artists.first?.name ?? "Deezer",
                     artworkURL: track.albumArt,
-                    durationMs: track.durationMs
+                    durationMs: min(30_000, track.durationMs > 0 ? track.durationMs : 30_000)
                 ),
                 url: url
             )
-        }
     }
 
     // MARK: HTTP

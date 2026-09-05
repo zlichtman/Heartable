@@ -1024,14 +1024,15 @@ struct BackendAPI: Sendable {
                          albumArt: String?,
                          durationMs: Int?) async throws {
         // Append after the current max position.
-        let last: [MixtapeTrackDTO] = (try? await client
+        struct PositionRow: Decodable { let position: Int? }
+        let last: [PositionRow] = try await client
             .from("mixtape_tracks")
             .select("position")
             .eq("mixtape_id", value: mixtapeID.uuidString)
             .order("position", ascending: false)
             .limit(1)
             .execute()
-            .value) ?? []
+            .value
         let pos = (last.first?.position ?? -1) + 1
         let payload = MixtapeTrackInsertDTO(
             mixtapeId: mixtapeID,
@@ -1107,6 +1108,49 @@ struct BackendAPI: Sendable {
     }
 
     // MARK: - Snapshots / backups
+
+    func renameSnapshot(id: UUID, name: String) async throws -> LibrarySnapshotDTO {
+        let name = try BackupName.validated(name)
+        guard let uid = await myUID() else { throw BackendError.notSignedIn }
+        let row: LibrarySnapshotDTO = try await client.from("library_snapshots")
+            .update(["name": name])
+            .eq("id", value: id.uuidString)
+            .eq("owner", value: uid.uuidString)
+            .select("id, name, playlist_count, track_count, liked_count, created_at, providers")
+            .single()
+            .execute().value
+        guard await myUID(expected: uid) != nil else { throw BackendError.notSignedIn }
+        return row
+    }
+
+    /// A missing/failed profile read is not permission to create a new baseline.
+    /// Existing snapshots also count, including ones created on another device.
+    func needsInitialBackup(userID: UUID) async throws -> Bool {
+        guard await myUID(expected: userID) != nil else { throw BackendError.notSignedIn }
+        struct Marker: Decodable { let initial_backup_at: String? }
+        let marker: Marker = try await client.from("profiles")
+            .select("initial_backup_at")
+            .eq("user_id", value: userID.uuidString)
+            .single().execute().value
+        if marker.initial_backup_at != nil { return false }
+        let existing: [IdRowDTO] = try await client.from("library_snapshots")
+            .select("id").eq("owner", value: userID.uuidString)
+            .limit(1).execute().value
+        if !existing.isEmpty {
+            try await markInitialBackupCompleted(userID: userID)
+            return false
+        }
+        return true
+    }
+
+    func markInitialBackupCompleted(userID: UUID) async throws {
+        guard await myUID(expected: userID) != nil else { throw BackendError.notSignedIn }
+        try await client.from("profiles")
+            .update(["initial_backup_at": nowISO])
+            .eq("user_id", value: userID.uuidString)
+            .is("initial_backup_at", value: nil)
+            .execute()
+    }
 
     func fetchSnapshots() async -> [LibrarySnapshotDTO] {
         guard let uid = await myUID() else { return [] }
@@ -1267,66 +1311,17 @@ struct BackendAPI: Sendable {
     /// Delete generated music data while preserving the user's Heartable identity,
     /// friends, and paired music services. Every operation throws on failure so
     /// the UI never reports a partially completed wipe as success.
-    func deleteAllUserData() async throws {
-        guard let uid = await myUID() else { throw BackendError.notSignedIn }
+    func deleteAllUserData(userID expectedUserID: UUID) async throws {
+        guard let uid = await myUID(expected: expectedUserID) else { throw BackendError.notSignedIn }
         let uidStr = uid.uuidString
 
-        let snaps: [IdRowDTO] = try await client
-            .from("library_snapshots")
-            .select("id")
-            .eq("owner", value: uidStr)
-            .execute()
-            .value
-        let snapshotIDs = snaps.map { $0.id.uuidString }
-
-        if !snapshotIDs.isEmpty {
-            let pls: [IdRowDTO] = try await client
-                .from("snapshot_playlists")
-                .select("id")
-                .in("snapshot_id", values: snapshotIDs)
-                .execute()
-                .value
-            let playlistIDs = pls.map { $0.id.uuidString }
-
-            if !playlistIDs.isEmpty {
-                try await client.from("snapshot_tracks")
-                    .delete()
-                    .in("snapshot_playlist_id", values: playlistIDs)
-                    .execute()
-            }
-            try await client.from("snapshot_liked_tracks")
-                .delete()
-                .in("snapshot_id", values: snapshotIDs)
-                .execute()
-            try await client.from("snapshot_playlists")
-                .delete()
-                .in("snapshot_id", values: snapshotIDs)
-                .execute()
-        }
-
-        try await client.from("library_snapshots")
-            .delete()
-            .eq("owner", value: uidStr)
-            .execute()
-
-        // Mixtape children and shares cascade from their parent rows.
-        try await client.from("mixtapes")
-            .delete()
-            .eq("owner", value: uidStr)
-            .execute()
+        // Storage cannot participate in the Postgres transaction. Clean this
+        // account's media first; failure leaves database rows intact and retryable.
         try await removeStorageFolder(bucket: "mixtape-media", path: uidStr.lowercased())
-
-        try await client.from("track_skip_versions")
-            .delete()
-            .eq("owner", value: uidStr)
-            .execute()
-        try await client.from("now_playing")
-            .delete()
-            .eq("user_id", value: uidStr)
-            .execute()
-        try await client.from("play_log")
-            .delete()
-            .eq("user_id", value: uidStr)
+        guard await myUID(expected: uid) != nil else { throw BackendError.notSignedIn }
+        // One transaction and verified cascades: no paginated ID reads or
+        // giant DELETE URLs. The server independently verifies expected_owner.
+        try await client.rpc("clear_my_music_data", params: ["expected_owner": uidStr])
             .execute()
     }
 

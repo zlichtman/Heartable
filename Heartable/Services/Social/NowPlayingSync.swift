@@ -22,7 +22,7 @@ struct ListeningSessionTracker {
         ghost: Bool,
         at observedAt: Date
     ) -> Bool {
-        guard let now else {
+        guard let now, now.source != .radioBrowser else {
             session = nil
             return false
         }
@@ -83,12 +83,17 @@ final class NowPlayingSync {
     private var lastPushAt: Date = .distantPast
     private var clearedUnavailableState = false
     private var lifecycleID = UUID()
+    private var suspended = false
+    private var activeWrites = 0
 
     /// A play is counted after 30 seconds of observed playback. Polling,
     /// pause/resume, and seeking stay inside one session; a stop or a true repeat
     /// begins another. A session that starts under Ghost Mode remains suppressed
     /// even if Ghost Mode is turned off before the track ends.
     func sync(now: PlayerStore.Now?, ghost: Bool) async {
+        guard !suspended else { return }
+        activeWrites += 1
+        defer { activeWrites -= 1 }
         guard let ownerID = AccountSessionStore.currentOwnerID else { return }
         let requestID = lifecycleID
         let observedAt = Date()
@@ -139,6 +144,16 @@ final class NowPlayingSync {
         lastPushAt = .distantPast
         clearedUnavailableState = false
     }
+
+    func suspendAndWait() async throws {
+        suspended = true
+        while activeWrites > 0 {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        reset()
+    }
+
+    func resume() { suspended = false }
 
     private func owns(ownerID: UUID, lifecycleID requestID: UUID) -> Bool {
         lifecycleID == requestID

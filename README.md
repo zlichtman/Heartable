@@ -28,7 +28,7 @@ name.
 ## Current release
 
 - Marketing version: **1.0.0**
-- Build: **48**
+- Build: **50**
 - Minimum OS: **iOS 26**
 - Toolchain: **Swift 6**, SwiftUI, XcodeGen, Swift Package Manager
 - Backend: **Supabase**
@@ -91,6 +91,23 @@ source selections stay put. Listening History uses one native toolbar trash
 button. Sounds adds live direct-stream volume and adjustable 1–8 second
 crossfades, preserving previous volume preferences without claiming loudness
 normalization or control over Spotify/Apple Music audio effects.
+
+Build 50 turns landscape cover browsing into a packed vinyl shelf. Playback
+handoffs retain the requested track while starting, await real direct-stream
+playback, reactivate interrupted audio sessions, and cancel stale starts.
+Spotify cold starts allow a bounded Connect-device propagation wait after the
+SDK handoff, and failed outgoing Spotify pauses stop the switch. These changes
+do not remove provider restrictions or replace physical-device beta checks.
+
+Services now separate connected music libraries, listening-history sources, and
+search/radio catalogs, with one Coming soon group for unimplemented adapters.
+WSUM's three stations are included in Radio search. The first usable library
+gets an automatic backup; subsequent backups honor the chosen cadence. New
+backup names are date/time only and can be renamed from the actions drawer.
+Clearing music data uses an account-checked database transaction, repairs
+recursive mixtape-sharing policies, and invalidates related local projections.
+See [the provider review and gift-mixtape design](docs/PROVIDER_AND_MIXTAPE_PLAN.md)
+for remaining integrations and platform limits.
 
 Home Screen widgets include Weekly Recap, Friends Listening, and Heartable
 Shortcuts. Weekly Recap also supports the rectangular Lock Screen slot;

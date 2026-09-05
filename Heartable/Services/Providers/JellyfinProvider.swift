@@ -263,9 +263,7 @@ struct JellyfinProvider: MusicProvider {
             artworkURL: track.albumArt,
             durationMs: track.durationMs
         )
-        await MainActor.run {
-            LocalAudioEngine.shared.play(meta, url: streamURL)
-        }
+        try await LocalAudioEngine.shared.play(meta, url: streamURL)
     }
 
     // MARK: - Server address normalization

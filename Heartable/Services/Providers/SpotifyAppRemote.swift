@@ -123,7 +123,7 @@ final class SpotifyAppRemote: NSObject, @preconcurrency SPTAppRemoteDelegate {
     }
 
     func appRemoteDidEstablishConnection(_ appRemote: SPTAppRemote) {
-        guard let uri = requestedURI, pending != nil,
+        guard appRemote === remote, let uri = requestedURI, pending != nil,
               ownerID == AccountSessionStore.currentOwnerID else { return }
         let request = requestID
         appRemote.playerAPI?.play(uri) { [weak self] _, error in
@@ -136,7 +136,7 @@ final class SpotifyAppRemote: NSObject, @preconcurrency SPTAppRemoteDelegate {
     }
 
     func appRemote(_ appRemote: SPTAppRemote, didFailConnectionAttemptWithError error: Error?) {
-        guard !awaitingCallback else { return }
+        guard appRemote === remote, !awaitingCallback else { return }
         finish(.failure(ProviderError("Couldn’t connect to Spotify on this iPhone. Tap the song to retry.")))
     }
 

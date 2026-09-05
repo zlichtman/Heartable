@@ -96,10 +96,8 @@ struct RootView: View {
                 } catch { /* Retried on the next account activation. */ }
             }
 
-            // Automatic backups must not start from the app-level launch task:
-            // at that point Supabase may not have restored the session namespace
-            // yet. Run only after account and provider bootstrap is complete.
-            await backupScheduler.runIfDue(userID: userID)
+            // AppTabView starts the first backup after library reconciliation,
+            // not alongside login or provider restoration.
         }
     }
 

@@ -234,11 +234,13 @@ struct HeartablePromptSheet: View {
                     .font(Typography.heading(22))
                     .foregroundStyle(theme.palette.text)
                     .multilineTextAlignment(.center)
-                Text(message)
-                    .font(Typography.body(13))
-                    .foregroundStyle(theme.palette.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+                if !message.isEmpty {
+                    Text(message)
+                        .font(Typography.body(13))
+                        .foregroundStyle(theme.palette.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
 
             TextField(placeholder, text: $text)

@@ -247,16 +247,21 @@ final class PlayerStore {
             candidates.append(pending)
         }
 
+        var preferredTrack = pendingSpotifyTrack
         if let pendingStartTrack,
            let pendingStartExpiresAt,
            Date() < pendingStartExpiresAt {
+            preferredTrack = pendingStartTrack
             let targetObserved = candidates.contains {
                 $0.source == pendingStartTrack.providerID && $0.uri == pendingStartTrack.uri
+                    && ($0.isPlaying || userPaused)
             }
             if targetObserved {
                 self.pendingStartTrack = nil
                 self.pendingStartExpiresAt = nil
-            } else {
+            } else if !candidates.contains(where: {
+                $0.source == pendingStartTrack.providerID && $0.uri == pendingStartTrack.uri
+            }) {
                 var pending = Self.optimisticNow(pendingStartTrack)
                 pending.isPlaying = false
                 candidates.append(pending)
@@ -275,11 +280,7 @@ final class PlayerStore {
             }
         }
 
-        let playing = candidates.filter(\.isPlaying)
-        let pool = playing.isEmpty ? candidates : playing
-        let selected = pool.max {
-            (changedAt[$0.source] ?? .distantPast) < (changedAt[$1.source] ?? .distantPast)
-        }
+        let selected = Self.selectCandidate(candidates, preferredTrack: preferredTrack, changedAt: changedAt)
         guard lifecycleID == requestID else { return 8 }
         now = selected
         if let selected,
@@ -317,6 +318,21 @@ final class PlayerStore {
         guard let previous, previous.source == .spotify else { return }
         guard spotifyFailureRetention.shouldRetain(at: Date()) else { return }
         candidates.append(previous)
+    }
+
+    /// An explicit start owns the player while its transport is preparing. A
+    /// delayed poll from the old provider must not steal the selected song.
+    static func selectCandidate(_ candidates: [Now], preferredTrack: UnifiedTrack?,
+                                changedAt: [ProviderID: Date]) -> Now? {
+        if let preferredTrack,
+           let selected = candidates.first(where: {
+               $0.source == preferredTrack.providerID && $0.uri == preferredTrack.uri
+           }) { return selected }
+        let playing = candidates.filter(\.isPlaying)
+        let pool = playing.isEmpty ? candidates : playing
+        return pool.max {
+            (changedAt[$0.source] ?? .distantPast) < (changedAt[$1.source] ?? .distantPast)
+        }
     }
 
     /// Poll Spotify when it's the active source (keep it responsive); otherwise
@@ -380,6 +396,7 @@ final class PlayerStore {
 
     private func performPlay(_ track: UnifiedTrack, segment: [UnifiedTrack],
                              positionMs: Int, playing: Bool, wakeSpotify: Bool, requestID: UUID) async {
+        let outgoing = now
         pendingSpotifyTrack = nil
         startingTrackKey = track.key
         needsPlaybackRetry = false
@@ -393,9 +410,10 @@ final class PlayerStore {
         pendingStartExpiresAt = Date().addingTimeInterval(95)
         changedAt[track.providerID] = Date()
 
-        await pauseOthers(except: track.providerID)
-        guard playRequestID == requestID, !Task.isCancelled else { return }
         do {
+            try await pauseOthers(except: track.providerID, outgoing: outgoing)
+            try Task.checkCancellation()
+            guard playRequestID == requestID else { return }
             switch track.providerID {
             case .spotify:
                 guard let token = await SpotifyAuth.getValidAccessToken() else {
@@ -410,8 +428,12 @@ final class PlayerStore {
                     // no manual Play action or empty device picker is needed.
                     try await SpotifyAppRemote.shared.wakeAndPlay(track)
                     try Task.checkCancellation()
-                    try await Task.sleep(for: .milliseconds(700))
-                    try await installSpotifyQueue(segment, token: token, positionMs: positionMs)
+                    // App Remote can play before Connect publishes the phone.
+                    // Wait through that short propagation gap without reopening
+                    // Spotify or showing an empty device picker.
+                    try await PlaybackStartupRetry.waitForSpotifyDevice {
+                        try await self.installSpotifyQueue(segment, token: token, positionMs: positionMs)
+                    }
                 }
                 if !playing { try await SpotifyAPI.control("/me/player/pause", token: token) }
             case .apple:
@@ -421,6 +443,7 @@ final class PlayerStore {
                 }
             default:
                 try await ProviderRegistry.playUnified(track)
+                try Task.checkCancellation()
                 if positionMs > 0 { LocalAudioEngine.shared.seek(toMs: positionMs) }
                 if !playing { LocalAudioEngine.shared.pause() }
             }
@@ -529,11 +552,25 @@ final class PlayerStore {
     /// halts the active Spotify Connect device (e.g. your computer); Apple Music
     /// and the in-app engine always play on this device (route them elsewhere with
     /// AirPlay). There is no way to make Apple Music play *on* a Spotify device.
-    private func pauseOthers(except keep: ProviderID) async {
+    private func pauseOthers(except keep: ProviderID, outgoing: Now?) async throws {
+        try Task.checkCancellation()
         if keep != .apple { AppleMusicQueue.cancel() }
-        if keep != .spotify, let token = await SpotifyAuth.getValidAccessToken() {
-            await SpotifyAPI.pause(token: token)
+        // Within a confirmed provider queue there is no handoff. Avoid a remote
+        // pause round-trip for every direct-stream song/crossfade.
+        if keep != .spotify, outgoing?.source != keep || lastConfirmedNow?.source != keep {
+            if let token = await SpotifyAuth.getValidAccessToken() {
+                try Task.checkCancellation()
+                do { try await SpotifyAPI.control("/me/player/pause", token: token) }
+                catch is NoActiveDeviceError { /* Already idle. */ }
+                catch {
+                    try Task.checkCancellation()
+                    throw ProviderError("Couldn’t pause Spotify, so the provider switch was stopped. Try again or pause Spotify first.")
+                }
+            } else if outgoing?.source == .spotify, outgoing?.isPlaying == true {
+                throw ProviderError("Reconnect Spotify or pause it before switching music services.")
+            }
         }
+        try Task.checkCancellation()
         if keep != .apple, MusicAuthorization.currentStatus == .authorized {
             ApplicationMusicPlayer.shared.pause()
         }
@@ -574,9 +611,10 @@ final class PlayerStore {
         }
         guard let current = now else { return }
         userPaused = current.isPlaying
+        let request = playRequestID
         do {
             if current.source.playsViaLocalEngine {
-                LocalAudioEngine.shared.toggle()
+                try await LocalAudioEngine.shared.toggle()
             } else if current.source == .apple {
                 if current.isPlaying { ApplicationMusicPlayer.shared.pause() }
                 else { try await ApplicationMusicPlayer.shared.play() }
@@ -594,10 +632,13 @@ final class PlayerStore {
                     }
                 }
             }
+            guard playRequestID == request, now?.uri == current.uri else { return }
             self.now?.isPlaying.toggle()
             await refresh()
         } catch {
+            guard playRequestID == request, now?.uri == current.uri else { return }
             userPaused = false
+            if current.source.playsViaLocalEngine { needsPlaybackRetry = true }
             showFeedback(error.localizedDescription)
         }
     }

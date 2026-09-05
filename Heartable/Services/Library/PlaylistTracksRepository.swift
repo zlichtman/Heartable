@@ -269,6 +269,22 @@ final class PlaylistTracksRepository {
         await persist()
     }
 
+    func remove(keys: Set<String>) async {
+        guard !keys.isEmpty else { return }
+        // Invalidate all outstanding publications; cancellation alone does not
+        // stop an adapter from returning its already-fetched, now-deleted rows.
+        lifecycleID = UUID()
+        for task in inFlight.values { task.cancel() }
+        inFlight = [:]
+        loadingKeys = []
+        refreshingKeys = []
+        for key in keys {
+            entries[key] = nil
+            failedKeys.remove(key)
+        }
+        await persist()
+    }
+
     func reset() {
         lifecycleID = UUID()
         hydrationTask?.cancel()

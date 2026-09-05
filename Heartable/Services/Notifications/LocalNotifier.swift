@@ -16,6 +16,10 @@ import UserNotifications
 /// `UserDefaults` before doing anything, and no-ops gracefully when notifications
 /// are not allowed. Safe to call from a `@MainActor` context.
 enum LocalNotifier {
+    // Notification header icons belong to iOS, not this content payload.
+    // ThemeStore updates UIApplication's alternate icon. Do not attach a fake
+    // sender avatar or delete/repost delivered notifications to force an icon
+    // refresh: neither is a supported app-icon cache invalidation mechanism.
 
     // MARK: - Preference keys (mirror the @AppStorage keys in NotificationsView)
 

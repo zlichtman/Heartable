@@ -141,7 +141,7 @@ struct OnboardingView: View {
             .padding(.top, 12)
 
             VStack(spacing: 10) {
-                ForEach(ProviderCatalog.all.filter { $0.status == .live }) { entry in
+                ForEach(ProviderCatalog.entries(in: .library)) { entry in
                     connectRow(entry)
                 }
             }

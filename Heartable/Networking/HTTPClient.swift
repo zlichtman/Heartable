@@ -78,20 +78,23 @@ enum HTTPClient {
     private static func perform(_ req: URLRequest) async throws -> (Data, URLResponse) {
         var attempt = 0
         while true {
+            try Task.checkCancellation()
             do {
                 let (data, resp) = try await URLSession.shared.data(for: req)
+                try Task.checkCancellation()
                 if let http = resp as? HTTPURLResponse,
                    http.statusCode == 429 || http.statusCode == 503,
                    attempt < maxAttempts - 1 {
                     let delay = retryAfterDelay(http) ?? backoff(attempt)
-                    try? await Task.sleep(nanoseconds: nanoseconds(delay))
+                    try await Task.sleep(nanoseconds: nanoseconds(delay))
                     attempt += 1
                     continue
                 }
                 return (data, resp)
             } catch {
+                try Task.checkCancellation()
                 if isTransient(error), attempt < maxAttempts - 1 {
-                    try? await Task.sleep(nanoseconds: nanoseconds(backoff(attempt)))
+                    try await Task.sleep(nanoseconds: nanoseconds(backoff(attempt)))
                     attempt += 1
                     continue
                 }

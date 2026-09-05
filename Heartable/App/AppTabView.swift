@@ -19,6 +19,7 @@ struct AppTabView: View {
     @Environment(WeeklyRecapStore.self) private var weeklyRecap
     @Environment(LibrarySessionStore.self) private var librarySession
     @Environment(PlaylistTracksRepository.self) private var playlistTracks
+    @Environment(BackupScheduler.self) private var backupScheduler
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("heartable.navigation.showNames")
     private var showNavigationNames = false
@@ -65,6 +66,7 @@ struct AppTabView: View {
                 providers: providers.connected,
                 playlistTracks: playlistTracks
             )
+            await backupScheduler.runIfDue()
         }
         .task {
             await weeklyRecap.load()

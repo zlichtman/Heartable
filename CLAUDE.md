@@ -124,6 +124,14 @@ polling loops in views. Cancel stale starts, activate audio lazily, preserve the
 queue and cached playlist data across navigation, and surface actionable errors
 without immediately dismissing the player.
 
+Direct-stream starts are structured, awaited operations: reactivate the audio
+session on every start/resume, wait for actual playback or a bounded error, and
+cancel obsolete generations on pause/stop. Never launch a detached/deferred
+start from a provider adapter or expose credential-bearing AVFoundation errors.
+An explicit pending track wins now-playing selection over stale old-provider
+polls. A failed Spotify pause aborts a handoff; after SDK wake, retry only the
+short Connect-device propagation gap, not authentication failures.
+
 `PlaybackQueue` identifies occurrences, not just URIs. Shuffle must install the
 whole selected queue, not merely choose a random first song. Queue ordering is
 owned by Heartable; disable inherited native shuffle/repeat when installing it.
@@ -166,6 +174,17 @@ Playlist detail alone enables landscape rotation for a song-cover browser: one
 card per track occurrence, in the selected list order (not grouped by album).
 Retain the portrait list and its scroll position while browsing covers. Reuse
 the existing artwork cache and playback router; rotation never starts a sync.
+The landscape presentation is a packed vinyl shelf with stable-width scroll
+targets, a pulled-forward selected sleeve, and one shared track/play caption.
+
+Backup names are local date and time only by default, persisted at
+capture time, and editable through Rename in the backup actions drawer. Never
+replace a user's custom name automatically. The first usable library gets a
+baseline even with manual cadence; the server-side initial_backup_at marker
+prevents reinstalls or an explicit data clear from recreating that baseline.
+Clear generated music data with clear_my_music_data(expected_owner), never a
+sequence of paginated child-ID deletes. Suspend backup/listening writes while
+clearing, invalidate relevant caches, and preserve identity/provider pairings.
 
 Backups must remain inspectable in-app: users can drill from a snapshot into its
 playlists and tracks. The Changes view compares each snapshot with its immediate

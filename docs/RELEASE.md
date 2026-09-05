@@ -25,6 +25,9 @@ builds instead of replacing the record.
 
 1. Confirm `main` is clean.
 2. Increment `CURRENT_PROJECT_VERSION` in `project.yml`.
+   First check App Store Connect's latest uploaded build and Xcode Cloud's
+   latest run: Cloud assigns its own build number. Choose the next unused number
+   and verify the processed artifact, not just the number in the commit message.
 3. Run `xcodegen generate`.
 4. Run `ci_scripts/validate_release_identity.sh`; it lints plist,
    entitlement, and privacy-manifest contracts and rejects private material.

@@ -127,7 +127,7 @@ struct LibraryView: View {
     @ViewBuilder
     private var providerStatusRow: some View {
         let ids = ProviderCatalog.all
-            .filter { $0.status == .live && providers.isConnected($0.id) }
+            .filter { $0.section == .library && providers.isConnected($0.id) }
             .map(\.id)
         if !ids.isEmpty {
             HStack(spacing: 6) {

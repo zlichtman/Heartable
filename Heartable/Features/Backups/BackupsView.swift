@@ -16,10 +16,12 @@ struct BackupsView: View {
     private enum PendingBackupAction {
         case restore(UUID)
         case delete(UUID)
+        case rename(LibrarySnapshotDTO)
     }
     @Environment(ThemeStore.self) private var theme
     @Environment(ProvidersStore.self) private var providers
     @Environment(BannerCenter.self) private var banners
+    @Environment(BackupScheduler.self) private var backupScheduler
 
     @State private var snapshots: [LibrarySnapshotDTO] = []
     @State private var loaded = false
@@ -51,6 +53,9 @@ struct BackupsView: View {
     @State private var confirmRestoreID: UUID?
     @State private var actionSnapshot: LibrarySnapshotDTO?
     @State private var pendingBackupAction: PendingBackupAction?
+    @State private var renameSnapshot: LibrarySnapshotDTO?
+    @State private var backupName = ""
+    @State private var renaming = false
 
     // Scheduled capture preference, consumed by BackupScheduler on launch/foreground.
     @State private var frequency = BackupFrequency.manual.rawValue
@@ -101,6 +106,18 @@ struct BackupsView: View {
             )
         }
         .refreshable { await reload() }
+        .onReceive(NotificationCenter.default.publisher(for: .heartableBackupCreated)) { event in
+            guard event.object as? UUID == AccountSessionStore.currentOwnerID else { return }
+            Task { await reload() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .heartableMusicDataCleared)) { event in
+            guard event.object as? UUID == AccountSessionStore.currentOwnerID else { return }
+            snapshots = []
+            derivedProviders = [:]
+            expandedID = nil
+            selectedContent = nil
+            selectedDiff = nil
+        }
         .sheet(isPresented: restoreAlertBinding) {
             HeartableDestructiveConfirmation(
                 icon: "arrow.uturn.backward",
@@ -141,6 +158,10 @@ struct BackupsView: View {
                 exportName: csvName(snapshot),
                 isRestoring: restoringID == snapshot.id,
                 onClose: { actionSnapshot = nil },
+                onRename: {
+                    pendingBackupAction = .rename(snapshot)
+                    actionSnapshot = nil
+                },
                 onRestore: {
                     pendingBackupAction = .restore(snapshot.id)
                     actionSnapshot = nil
@@ -149,6 +170,19 @@ struct BackupsView: View {
                     pendingBackupAction = .delete(snapshot.id)
                     actionSnapshot = nil
                 }
+            )
+        }
+        .sheet(item: $renameSnapshot) { snapshot in
+            HeartablePromptSheet(
+                icon: "pencil",
+                title: "Rename backup",
+                message: "",
+                placeholder: "Backup name",
+                text: $backupName,
+                actionTitle: "Save",
+                isBusy: renaming,
+                onCancel: { renameSnapshot = nil },
+                onSubmit: { Task { await rename(snapshot) } }
             )
         }
     }
@@ -760,6 +794,9 @@ struct BackupsView: View {
             confirmRestoreID = id
         case .delete(let id):
             confirmDeleteID = id
+        case .rename(let snapshot):
+            backupName = snapshot.name ?? ""
+            renameSnapshot = snapshot
         case nil:
             break
         }
@@ -789,6 +826,22 @@ struct BackupsView: View {
 
     // MARK: - Data actions
 
+    private func rename(_ snapshot: LibrarySnapshotDTO) async {
+        guard !renaming else { return }
+        renaming = true
+        defer { renaming = false }
+        do {
+            let updated = try await BackendAPI.shared.renameSnapshot(id: snapshot.id, name: backupName)
+            if let index = snapshots.firstIndex(where: { $0.id == updated.id }) {
+                snapshots[index] = updated
+            }
+            renameSnapshot = nil
+            banners.success("Backup renamed")
+        } catch {
+            banners.error((error as? LocalizedError)?.errorDescription ?? "Could not rename backup. Try again.")
+        }
+    }
+
     private func reload() async {
         let fetched = await BackendAPI.shared.fetchSnapshots()
         snapshots = fetched
@@ -816,7 +869,9 @@ struct BackupsView: View {
         capturing = true
         defer { capturing = false }
         do {
-            let result = try await BackendAPI.shared.captureSnapshot(providerIDs: ids)
+            let result = try await backupScheduler.performManualCapture {
+                try await BackendAPI.shared.captureSnapshot(providerIDs: ids)
+            }
             await reload()
             let msg = "Backed up \(result.playlistCount) playlists, \(result.trackCount) tracks, \(result.likedCount) liked."
             banners.success(msg)
@@ -857,9 +912,11 @@ struct BackupsView: View {
             return
         }
 
-        let name = url.deletingPathExtension().lastPathComponent
+        let name = BackupName.timestamp()
         do {
-            let result = try await BackendAPI.shared.importSnapshotFromCSV(name: name, rows: rows)
+            let result = try await backupScheduler.performManualCapture {
+                try await BackendAPI.shared.importSnapshotFromCSV(name: name, rows: rows)
+            }
             await reload()
             banners.success("Imported \(result.playlistCount) playlists, \(result.trackCount) tracks.")
         } catch {
@@ -1710,6 +1767,7 @@ private struct BackupActionsSheet: View {
     let exportName: String
     let isRestoring: Bool
     let onClose: () -> Void
+    let onRename: () -> Void
     let onRestore: () -> Void
     let onDelete: () -> Void
 
@@ -1733,6 +1791,11 @@ private struct BackupActionsSheet: View {
             }
 
             VStack(spacing: 9) {
+                Button(action: onRename) {
+                    actionRow(icon: "pencil", title: "Rename", destructive: false)
+                }
+                .buttonStyle(.plain)
+
                 ShareLink(
                     item: CSVDocument(snapshot: snapshot),
                     preview: SharePreview("\(exportName).csv")

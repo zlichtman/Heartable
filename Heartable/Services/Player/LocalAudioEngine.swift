@@ -6,20 +6,13 @@ import Observation
 /// Activation is intentionally lazy so constructing the shared engine neither
 /// stalls launch nor interrupts another app's audio before the user presses play.
 private actor LocalPlaybackAudioSession {
-    private var isConfiguredAndActive = false
-
-    func activate() -> Bool {
-        if isConfiguredAndActive { return true }
+    func activate() throws {
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .default)
             try session.setActive(true)
-            isConfiguredAndActive = true
-            return true
         } catch {
-            // A later play request retries transient activation failures. AVPlayer
-            // still gets a chance to play, matching the engine's prior fallback.
-            return false
+            throw ProviderError("Heartable couldn’t activate audio. Try playing the song again.")
         }
     }
 }
@@ -68,9 +61,10 @@ final class LocalAudioEngine {
     private var fadeTask: Task<Void, Never>?
     private var fadeProgress: Float?
     private var settings = AudioSettings.current()
-    /// A first play waits for background audio-session activation. Keeping the
-    /// task lets pause/stop or a newer play cancel an obsolete deferred start.
-    private var pendingPlayTask: Task<Void, Never>?
+    /// Every start is awaited by its caller. A generation also invalidates a
+    /// pending start when Pause/Stop is pressed during audio-session activation.
+    private var startGeneration = UUID()
+    private var isPreparing = false
     private let audioSession = LocalPlaybackAudioSession()
 
     private init() {
@@ -101,14 +95,44 @@ final class LocalAudioEngine {
         }
     }
 
-    func play(_ meta: NowPlaying, url: URL) {
-        guard !Task.isCancelled else { return }
-        pendingPlayTask?.cancel()
-        pendingPlayTask = Task { [weak self, audioSession] in
-            _ = await audioSession.activate()
-            guard !Task.isCancelled, let self else { return }
-            self.pendingPlayTask = nil
-            self.startPlayback(meta, url: url)
+    func play(_ meta: NowPlaying, url: URL) async throws {
+        try Task.checkCancellation()
+        let generation = UUID()
+        startGeneration = generation
+        isPreparing = true
+        defer { if startGeneration == generation { isPreparing = false } }
+        do {
+            // Other providers and interruptions can deactivate the shared
+            // session. Never trust an activation cached from an earlier song.
+            try await audioSession.activate()
+            try Task.checkCancellation()
+            guard startGeneration == generation else { throw CancellationError() }
+            startPlayback(meta, url: url)
+            try await waitForPlayback(generation: generation)
+        } catch {
+            if startGeneration == generation { pause() }
+            throw error
+        }
+    }
+
+    private func waitForPlayback(generation: UUID) async throws {
+        let deadline = ContinuousClock.now.advanced(by: .seconds(20))
+        while true {
+            try Task.checkCancellation()
+            guard startGeneration == generation else { throw CancellationError() }
+            if active.currentItem?.status == .failed {
+                // AVFoundation errors may contain credential-bearing stream
+                // URLs. Keep those out of notifications and logs.
+                throw ProviderError("This stream couldn’t be played. Try another song or check the service connection.")
+            }
+            if active.timeControlStatus == .playing {
+                isPlaying = true
+                return
+            }
+            guard ContinuousClock.now < deadline else {
+                throw ProviderError("This stream took too long to start. Check your connection and try again.")
+            }
+            try await Task.sleep(for: .milliseconds(100))
         }
     }
 
@@ -141,7 +165,7 @@ final class LocalAudioEngine {
         nowPlaying = meta
         positionMs = 0
         active.play()
-        isPlaying = true
+        isPlaying = active.timeControlStatus == .playing
     }
 
     /// Overlap two players: incoming starts silent on the idle player and ramps up
@@ -160,11 +184,18 @@ final class LocalAudioEngine {
         fadeProgress = 0
         nowPlaying = meta
         positionMs = 0
-        isPlaying = true
+        isPlaying = incoming.timeControlStatus == .playing
 
         // Inherits MainActor isolation, so touching the players and @Observable
         // state here is safe and stays on the main thread.
         fadeTask = Task { [weak self] in
+            // Keep the outgoing song audible while the incoming stream buffers.
+            // The awaited start owns timeout/error handling and cancels this task.
+            while incoming.timeControlStatus != .playing {
+                guard !Task.isCancelled else { return }
+                do { try await Task.sleep(for: .milliseconds(100)) }
+                catch { return }
+            }
             let steps = 40
             let stepNanos = UInt64(duration / Double(steps) * 1_000_000_000)
             for i in 1...steps {
@@ -212,22 +243,34 @@ final class LocalAudioEngine {
         active.volume = settings.targetVolume
     }
 
-    func toggle() {
-        if pendingPlayTask != nil {
+    func toggle() async throws {
+        if isPreparing {
             pause()
             return
         }
         if active.timeControlStatus == .playing { pause() }
         else {
-            applySettings(AudioSettings.current())
-            active.play()
-            isPlaying = true
+            let generation = UUID()
+            startGeneration = generation
+            isPreparing = true
+            defer { if startGeneration == generation { isPreparing = false } }
+            do {
+                try await audioSession.activate()
+                try Task.checkCancellation()
+                guard startGeneration == generation else { throw CancellationError() }
+                applySettings(AudioSettings.current())
+                active.play()
+                try await waitForPlayback(generation: generation)
+            } catch {
+                if startGeneration == generation { pause() }
+                throw error
+            }
         }
     }
 
     func pause() {
-        pendingPlayTask?.cancel()
-        pendingPlayTask = nil
+        startGeneration = UUID()
+        isPreparing = false
         // Cancel any in-flight fade and quiet the idle/outgoing player too.
         settleFade()
         active.pause()
@@ -241,8 +284,8 @@ final class LocalAudioEngine {
     }
 
     func stop() {
-        pendingPlayTask?.cancel()
-        pendingPlayTask = nil
+        startGeneration = UUID()
+        isPreparing = false
         settleFade()
         playerA.pause()
         playerB.pause()

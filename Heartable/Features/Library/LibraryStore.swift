@@ -317,6 +317,8 @@ final class LibraryStore {
     }
 
     private func rebuildArtistIndex(from repository: PlaylistTracksRepository) async {
+        let requestID = lifecycleID
+        let ownerID = AccountSessionStore.currentOwnerID
         let baseTracks = likedTracks + topTracks
         let cachedContents = repository.cachedContents(for: playlists)
         let cachedImages = artistImageCache
@@ -327,10 +329,24 @@ final class LibraryStore {
                 cachedImages: cachedImages
             )
         }.value
-
+        guard lifecycleID == requestID, AccountSessionStore.currentOwnerID == ownerID else { return }
         libraryTracks = projection.entries
         artists = projection.artists
         didBuildArtistIndex = repository.hasResolvedAll(playlists)
+    }
+
+    /// Drop deleted personal mixtapes without evicting connected-service caches.
+    func removeOwnedMixtapes(using repository: PlaylistTracksRepository) async {
+        guard let ownerID = AccountSessionStore.currentOwnerID else { return }
+        lifecycleID = UUID()
+        let removed = Set(playlists.filter {
+            $0.providerID == .heartable && $0.owner == "Heartable Mixtape"
+        }.map(\.key))
+        playlists.removeAll { removed.contains($0.key) }
+        await repository.remove(keys: removed)
+        guard AccountSessionStore.currentOwnerID == ownerID else { return }
+        await rebuildArtistIndex(from: repository)
+        await saveCache(providerIDs: loadedProviders ?? [], ownerID: ownerID)
     }
 
     private func saveCache(providerIDs: Set<ProviderID>, ownerID: UUID) async {

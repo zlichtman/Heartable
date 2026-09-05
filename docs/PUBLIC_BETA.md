@@ -54,6 +54,13 @@ Test on a physical iPhone using the exact processed TestFlight binary:
 - [ ] Plex and Jellyfin local-network prompts are contextual and both HTTP LAN
       and HTTPS server paths have been tested.
 - [ ] Unsupported provider capabilities never present active controls.
+- [ ] Switch Apple Music → Spotify → Apple Music and each connected direct-stream
+      service, from both idle and playing. Repeat rapid taps and Pause during a
+      start; only the final requested song may play. Test a failed Spotify pause,
+      expired direct-stream URL, network outage, and audio interruption/recovery.
+- [ ] Deezer is a preview route, not full-song playback. Audius, Internet Archive,
+      Radio Browser, Plex and Jellyfin use the direct-stream engine; verify each
+      connected service with real playable content, not only simulator fixtures.
 - [ ] A provider outage leaves the last coherent cached library visible and
       gives actionable native notification feedback.
 
@@ -92,11 +99,28 @@ registration to an unrestricted public cohort.
 
 ## External beta smoke test
 
+- [ ] On a fresh account, connecting the first usable library creates one
+      automatic backup even with manual cadence. Empty/offline sources do not
+      create empty backups; reconnect and confirm retry succeeds.
+- [ ] Backup names are date/time only; Rename survives relaunch and rejects a
+      blank name without dismissing the editor. Existing custom names remain.
+- [ ] On a disposable test account, clear music data during an automatic backup
+      and while a track is playing. Confirm snapshots/owned mixtapes/history
+      disappear, provider pairings/profile/friends remain, and reopening does
+      not recreate the first backup. Never run this test on a real library.
+- [ ] Search WSUM with Radio included; verify FM, Freeflow, and Sports stream
+      on a physical device and do not manufacture song-play-count entries.
+
 - [ ] Install from the public TestFlight link on a device that has never run a
       development build.
 - [ ] Exercise authentication, profile photo, every live provider, search,
       library navigation, playback/Now Playing, friends, chat, backups and diff
       history, notifications, appearance, cache clearing, and account deletion.
+- [ ] Change each of the eight app icons and trigger a new native notification
+      after Apple's icon-change confirmation, in foreground and background.
+      Check Home Screen and notification artwork separately. iOS owns the
+      notification header and may retain artwork on older delivered notices;
+      Heartable must not delete notification history or spoof sender icons.
 - [ ] Verify launch/hang diagnostics and Supabase Auth/API/Storage logs for the
       processed build, with no repeated crash, RLS, or authorization failures.
 - [ ] Start with a small external cohort and manual rollout; widen only after

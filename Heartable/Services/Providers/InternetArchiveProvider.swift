@@ -109,9 +109,7 @@ struct InternetArchiveProvider: MusicProvider {
             artworkURL: track.albumArt,
             durationMs: track.durationMs
         )
-        await MainActor.run {
-            LocalAudioEngine.shared.play(nowPlaying, url: streamURL)
-        }
+        try await LocalAudioEngine.shared.play(nowPlaying, url: streamURL)
     }
 
     // MARK: - Networking

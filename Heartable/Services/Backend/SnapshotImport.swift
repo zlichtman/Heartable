@@ -478,7 +478,7 @@ extension BackendAPI {
                 playlists.append(CapturedPlaylist(playlist: pl, tracks: tracks))
                 contributed = true
             }
-            let likedTracks = await provider.likedTracks(limit: 500)
+            let likedTracks = await provider.likedTracks(limit: 10_000)
             guard AccountSessionStore.currentOwnerID == ownerID else {
                 throw BackendError.notSignedIn
             }
@@ -494,7 +494,7 @@ extension BackendAPI {
         }
 
         let trimmed = (name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        let snapshotName = trimmed.isEmpty ? "Library backup" : trimmed
+        let snapshotName = trimmed.isEmpty ? BackupName.timestamp() : try BackupName.validated(trimmed)
         do {
             return try await insertSnapshot(
                 name: snapshotName,

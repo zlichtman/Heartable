@@ -104,11 +104,18 @@ struct RadioBrowserProvider: MusicProvider {
 
     func search(_ query: String) async -> [UnifiedTrack] {
         guard await isConnected() else { return [] }
+        let featured = FeaturedRadioStations.search(query)
+        if query.localizedCaseInsensitiveContains("wsum"), !featured.isEmpty {
+            return featured // No mirror lookup needed for the curated station.
+        }
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? ""
         let stations = await get(
             "/json/stations/search?name=\(encoded)&limit=\(Self.searchLimit)&hidebroken=true&order=clickcount&reverse=true"
         )
-        return stations.map(Self.mapStation)
+        let results = stations.map(Self.mapStation)
+        return featured + results.filter { result in
+            !featured.contains { $0.name.caseInsensitiveCompare(result.name) == .orderedSame }
+        }
     }
 
     // MARK: - Playback (live stream through the in-app engine)
@@ -116,10 +123,16 @@ struct RadioBrowserProvider: MusicProvider {
     func play(_ track: UnifiedTrack) async throws {
         let uuid = track.providerTrackID
         // Resolve a fresh stream URL at play time — stations come and go.
-        let stations = await get("/json/stations/byuuid/\(uuid)")
-        guard let resolved = stations.first?.urlResolved, !resolved.isEmpty,
-              let url = URL(string: resolved) else {
-            throw ProviderError("This station has no working stream right now.")
+        let url: URL
+        if let station = FeaturedRadioStations.station(id: uuid) {
+            url = station.stream
+        } else {
+            let stations = await get("/json/stations/byuuid/\(uuid)")
+            guard let resolved = stations.first?.urlResolved, !resolved.isEmpty,
+                  let resolvedURL = URL(string: resolved) else {
+                throw ProviderError("This station has no working stream right now.")
+            }
+            url = resolvedURL
         }
 
         let nowPlaying = LocalAudioEngine.NowPlaying(
@@ -133,12 +146,10 @@ struct RadioBrowserProvider: MusicProvider {
             // Live streams have no duration.
             durationMs: 0
         )
-        await MainActor.run {
-            LocalAudioEngine.shared.play(nowPlaying, url: url)
-        }
+        try await LocalAudioEngine.shared.play(nowPlaying, url: url)
 
         // Register a listen with the directory (best effort — never surface a failure).
-        await Self.registerClick(uuid)
+        if FeaturedRadioStations.station(id: uuid) == nil { await Self.registerClick(uuid) }
     }
 
     // MARK: - Networking

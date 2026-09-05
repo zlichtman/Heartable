@@ -6,6 +6,13 @@ enum ProviderStatus: Sendable {
     case comingSoon    // documented, not wired (needs creds/server/no API)
 }
 
+enum ProviderSection: String, CaseIterable, Sendable {
+    case library = "Music libraries"
+    case history = "Listening history"
+    case discovery = "Search & radio"
+    case comingSoon = "Coming soon"
+}
+
 /// Which unified features a service's API actually exposes. Differs per service
 /// (e.g. Audius/Deezer have no user login, so no personal liked/playlists), so the
 /// Music Services screen shows a lit/greyed icon per capability.
@@ -43,6 +50,15 @@ struct ProviderCatalogEntry: Identifiable, Sendable {
     let usesLocalAudioEngine: Bool
     let makeProvider: @Sendable () -> any MusicProvider
 
+    /// Presentation reflects the implemented integration, not every feature the
+    /// upstream service might offer. Public catalogs are not account connections.
+    var section: ProviderSection {
+        guard status == .live else { return .comingSoon }
+        if id == .lastfm || id == .listenbrainz { return .history }
+        if capabilities.contains(.playlists) || capabilities.contains(.liked) { return .library }
+        return .discovery
+    }
+
     init(_ id: ProviderID, _ label: String, _ color: UInt32, _ symbol: String,
          _ blurb: String, _ status: ProviderStatus,
          caps: ProviderCapabilities = [],
@@ -70,8 +86,8 @@ enum ProviderCatalog {
         .init(.apple, "Apple Music", 0xfa2d48, "music.note.list",
               "Your library, playlists, search, and playback through native MusicKit.", .live,
               caps: [.liked, .playlists, .search, .playback],
-              steps: ["developer.apple.com › Identifiers › App IDs › toggle MusicKit, save.",
-                      "Rebuild — the entitlement signs the dev token at runtime."],
+              steps: ["Enable MusicKit under the Heartable App ID’s App Services.",
+                      "Authorize Music access on this device."],
               url: "https://developer.apple.com/musickit/",
               playbackTier: .full,
               adapter: { AppleMusicProvider() }),
@@ -130,12 +146,11 @@ enum ProviderCatalog {
                       "Tap Connect and enter your Last.fm username."],
               url: "https://www.last.fm/api/account/create",
               adapter: { LastfmProvider() }),
-        // Everything below is greyed/disconnected — these need credentials, a
-        // server, or have no usable public API. Capability icons stay so the
-        // key reads.
+        // Unimplemented services are collected in Coming soon, not represented
+        // by nonfunctional connection buttons. Plex/Jellyfin below are live.
         .init(.soundcloud, "SoundCloud", 0xff5500, "cloud.fill",
-              "API registration closed since 2022. Needs a client_id.", .comingSoon,
-              steps: ["Apply at developers.soundcloud.com for a client_id."],
+              "Account connection, likes, playlists, and playback are not integrated yet.", .comingSoon,
+              steps: ["Register a SoundCloud API application, then implement and verify OAuth and playback."],
               url: "https://developers.soundcloud.com/"),
         .init(.tidal, "Tidal", 0x000000, "water.waves",
               "Hi-fi catalog. Needs a registered app + review.", .comingSoon,
@@ -160,18 +175,22 @@ enum ProviderCatalog {
               usesLocalAudioEngine: true,
               adapter: { JellyfinProvider() }),
         .init(.qobuz, "Qobuz", 0x0085d3, "music.quarternote.3",
-              "Credentials by email request only.", .comingSoon),
+              "Qobuz account and playback integration is not implemented yet.", .comingSoon),
         .init(.youtubeMusic, "YouTube Music", 0xFF0000, "play.rectangle.fill",
-              "No official API. Not shippable.", .comingSoon),
+              "YouTube Music account and playback integration is not implemented yet.", .comingSoon),
         .init(.amazonMusic, "Amazon Music", 0x00A8E1, "cart.fill",
-              "Closed beta. No public developer access.", .comingSoon),
+              "Amazon Music integration is not implemented; developer access requires approval.", .comingSoon),
         .init(.bandcamp, "Bandcamp", 0x1da0c3, "opticaldisc.fill",
-              "General API discontinued. oEmbed only.", .comingSoon),
+              "Collection streaming and playlists through Bandcamp’s Subsonic beta are not integrated yet.", .comingSoon),
         .init(.pandora, "Pandora", 0x00a0ee, "radio.fill",
-              "Closed developer program.", .comingSoon),
+              "Pandora integration is not implemented; partner access is required.", .comingSoon),
     ]
 
     static func entry(_ id: ProviderID) -> ProviderCatalogEntry? {
         all.first { $0.id == id }
+    }
+
+    static func entries(in section: ProviderSection) -> [ProviderCatalogEntry] {
+        all.filter { $0.section == section }
     }
 }

@@ -1,16 +1,13 @@
 import SwiftUI
 
-/// Connect/disconnect every music service in one compact list. Each row shows the
-/// real service logo, a per-feature capability key (lit when the service's API
-/// supports it, greyed when it doesn't), and a connect control. Non-live services
-/// open a setup sheet with what's needed to wire them.
+/// Account libraries, listening-history connections and optional public search
+/// sources are deliberately separate. Unimplemented services have no fake controls.
 struct MusicServicesView: View {
     @Environment(ProvidersStore.self) private var providers
     @Environment(ThemeStore.self) private var theme
     @Environment(BannerCenter.self) private var banners
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var busy: ProviderID?
-    @State private var setupEntry: ProviderCatalogEntry?
     @State private var lastfmPromptShown = false
     @State private var lastfmUsername = ""
     @State private var listenbrainzPromptShown = false
@@ -21,9 +18,16 @@ struct MusicServicesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 legend
-                VStack(spacing: 8) {
-                    ForEach(ProviderCatalog.all.filter { $0.id != .heartable }) { row($0) }
+                ForEach([ProviderSection.library, .history, .discovery], id: \.self) { section in
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(section.rawValue)
+                            .font(Typography.semibold(14))
+                            .foregroundStyle(theme.palette.textSecondary)
+                            .padding(.top, 10)
+                        ForEach(ProviderCatalog.entries(in: section)) { row($0) }
+                    }
                 }
+                comingSoon
             }
             .padding(16)
         }
@@ -34,10 +38,6 @@ struct MusicServicesView: View {
             // Account bootstrap owns the initial probe. This is only a later
             // foreground re-check and must not race restoration metadata.
             if !providers.isRestoring { await providers.refresh() }
-        }
-        .sheet(item: $setupEntry) { entry in
-            ServiceSetupSheet(entry: entry)
-                .heartableSheetChrome()
         }
         .sheet(isPresented: $jellyfinSheetShown) {
             JellyfinConnectSheet()
@@ -83,6 +83,23 @@ struct MusicServicesView: View {
                 }
             )
         }
+    }
+
+    private var comingSoon: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Coming soon", systemImage: "sparkles")
+                .font(Typography.semibold(15))
+                .foregroundStyle(theme.palette.text)
+            Text(ProviderCatalog.entries(in: .comingSoon).map(\.label).joined(separator: " · "))
+                .font(Typography.body(13))
+                .foregroundStyle(theme.palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(theme.palette.card, in: RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(theme.palette.border))
+        .padding(.top, 10)
     }
 
     // MARK: - Capability key
@@ -175,6 +192,11 @@ struct MusicServicesView: View {
                         Text(entry.label).font(Typography.semibold(15))
                             .foregroundStyle(theme.palette.text).lineLimit(1)
                         capabilityIcons(entry)
+                        if entry.section == .discovery {
+                            Text(discoveryDetail(entry.id))
+                                .font(Typography.body(11))
+                                .foregroundStyle(theme.palette.textMuted)
+                        }
                     }
                     Spacer(minLength: 6)
                     control(
@@ -220,7 +242,8 @@ struct MusicServicesView: View {
         if busy == entry.id || (providers.isRestoring && !connected) {
             ProgressView().controlSize(.small)
         } else if live {
-            Button(connected ? "Disconnect" : (reconnectRequired ? "Reconnect" : "Connect")) {
+            Button(entry.section == .discovery ? (connected ? "Hide" : "Include")
+                   : (connected ? "Disconnect" : (reconnectRequired ? "Reconnect" : "Connect"))) {
                 toggle(entry, connected: connected)
             }
             .font(Typography.semibold(13))
@@ -228,16 +251,15 @@ struct MusicServicesView: View {
             .padding(.horizontal, 14).padding(.vertical, 7)
             .frame(minHeight: 44)
             .background(connected ? theme.palette.surface : theme.palette.rose, in: Capsule())
-        } else {
-            Button { setupEntry = entry } label: {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 18))
-                    .foregroundStyle(theme.palette.textMuted)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Setup information for \(entry.label)")
+        }
+    }
+
+    private func discoveryDetail(_ id: ProviderID) -> String {
+        switch id {
+        case .deezer: "30-second previews"
+        case .mixcloud: "Opens in Mixcloud"
+        case .radioBrowser: "Live radio · includes WSUM"
+        default: "Public catalog · no account needed"
         }
     }
 
@@ -269,87 +291,15 @@ struct MusicServicesView: View {
             do {
                 if connected {
                     await providers.disconnect(entry.id)
-                    banners.info("Disconnected \(entry.label)")
+                    banners.info(entry.section == .discovery ? "Hidden \(entry.label) from search" : "Disconnected \(entry.label)")
                 } else {
                     try await providers.connect(entry.id)
-                    banners.success("Connected \(entry.label)")
+                    banners.success(entry.section == .discovery ? "Included \(entry.label) in search" : "Connected \(entry.label)")
                 }
             } catch {
                 banners.error(error.localizedDescription)
             }
             busy = nil
-        }
-    }
-}
-
-// MARK: - Setup sheet (non-live services)
-
-private struct ServiceSetupSheet: View {
-    @Environment(ThemeStore.self) private var theme
-    @Environment(\.openURL) private var openURL
-    @Environment(\.dismiss) private var dismiss
-    let entry: ProviderCatalogEntry
-
-    var body: some View {
-        HeartableDrawer {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .top, spacing: 12) {
-                    ProviderBadge(id: entry.id, size: 44, connected: true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.label).font(Typography.heading(22))
-                            .foregroundStyle(theme.palette.text)
-                        Text(statusLabel).font(Typography.semibold(12))
-                            .foregroundStyle(theme.palette.textMuted)
-                    }
-                    Spacer(minLength: 8)
-                }
-
-                Text(entry.blurb)
-                    .font(Typography.body(14))
-                    .foregroundStyle(theme.palette.textSecondary)
-
-                if !entry.setupSteps.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("SETUP").font(Typography.semibold(11)).tracking(1)
-                            .foregroundStyle(theme.palette.textMuted)
-                        ForEach(Array(entry.setupSteps.enumerated()), id: \.offset) { i, step in
-                            HStack(alignment: .top, spacing: 8) {
-                                Text("\(i + 1).").font(Typography.semibold(13))
-                                    .foregroundStyle(theme.palette.rose)
-                                Text(step).font(Typography.body(13))
-                                    .foregroundStyle(theme.palette.text)
-                            }
-                        }
-                    }
-                }
-
-                if let url = entry.setupURL {
-                    Button {
-                        dismiss()
-                        openURL(url)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.up.right.square")
-                            Text("Open developer docs").font(Typography.semibold(14))
-                        }
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(theme.palette.rose, in: RoundedRectangle(cornerRadius: Theme.Radius.sm))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(20)
-        }
-        .background(theme.palette.bg.ignoresSafeArea())
-    }
-
-    private var statusLabel: String {
-        switch entry.status {
-        case .live: "Available now"
-        case .stubbed: "Needs credentials"
-        case .comingSoon: "Coming soon"
         }
     }
 }

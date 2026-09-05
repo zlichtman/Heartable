@@ -157,4 +157,23 @@ final class LibrarySessionStore {
         library.reset()
         master.reset()
     }
+
+    func removeClearedMusicData(ownerID: UUID, playlistTracks: PlaylistTracksRepository) async {
+        guard AccountSessionStore.currentOwnerID == ownerID else { return }
+        lifecycleID = UUID()
+        let requestID = lifecycleID
+        synchronizationTask?.cancel()
+        await synchronizationTask?.value
+        guard lifecycleID == requestID, AccountSessionStore.currentOwnerID == ownerID else { return }
+        synchronizationTask = nil
+        synchronizationID = nil
+        synchronizing = false
+        await prepareCachedData(using: playlistTracks)
+        guard lifecycleID == requestID, AccountSessionStore.currentOwnerID == ownerID else { return }
+        await library.removeOwnedMixtapes(using: playlistTracks)
+        guard lifecycleID == requestID, AccountSessionStore.currentOwnerID == ownerID else { return }
+        await master.replaceAfterDataClear(library.libraryTracks.map(\.track))
+        guard lifecycleID == requestID else { return }
+        synchronizationProviderIDs = []
+    }
 }

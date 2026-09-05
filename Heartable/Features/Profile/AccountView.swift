@@ -7,6 +7,13 @@ struct AccountView: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(AuthStore.self) private var auth
     @Environment(BannerCenter.self) private var banners
+    @Environment(BackupScheduler.self) private var backupScheduler
+    @Environment(NowPlayingSync.self) private var nowPlayingSync
+    @Environment(TopTracksRepository.self) private var topTracks
+    @Environment(WeeklyRecapStore.self) private var weeklyRecap
+    @Environment(LibrarySessionStore.self) private var librarySession
+    @Environment(PlaylistTracksRepository.self) private var playlistTracks
+    @Environment(SkipStore.self) private var skips
 
     @State private var confirmSignOut = false
     @State private var signingOut = false
@@ -83,6 +90,7 @@ struct AccountView: View {
                 SettingsRow(icon: "rectangle.portrait.and.arrow.right", label: "Sign out")
             }
             .buttonStyle(.plain)
+            .disabled(clearing || deleting || signingOut)
 
             Button {
                 confirmClear = true
@@ -274,10 +282,29 @@ struct AccountView: View {
     }
 
     private func clearAll() async {
+        guard !clearing, !deleting, !signingOut,
+              let ownerID = auth.userID else { return }
         clearing = true
+        defer {
+            backupScheduler.resume()
+            nowPlayingSync.resume()
+            clearing = false
+        }
         resultMessage = nil
         do {
-            try await BackendAPI.shared.deleteAllUserData()
+            try await backupScheduler.suspendAndWait()
+            try await nowPlayingSync.suspendAndWait()
+            guard auth.userID == ownerID else { throw BackendError.notSignedIn }
+            try await BackendAPI.shared.deleteAllUserData(userID: ownerID)
+            guard auth.userID == ownerID else { throw BackendError.notSignedIn }
+            await topTracks.invalidateHistory()
+            guard auth.userID == ownerID else { throw BackendError.notSignedIn }
+            await weeklyRecap.clear(ownerID: ownerID)
+            guard auth.userID == ownerID else { throw BackendError.notSignedIn }
+            await librarySession.removeClearedMusicData(ownerID: ownerID, playlistTracks: playlistTracks)
+            guard auth.userID == ownerID else { throw BackendError.notSignedIn }
+            skips.reset()
+            NotificationCenter.default.post(name: .heartableMusicDataCleared, object: ownerID)
             resultIsError = false
             resultMessage = "All data cleared."
             confirmClear = false
@@ -287,7 +314,6 @@ struct AccountView: View {
             resultMessage = error.localizedDescription
             banners.error("Couldn't clear data. Please try again.")
         }
-        clearing = false
     }
 
     private func deleteAccount() async {

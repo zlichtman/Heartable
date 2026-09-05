@@ -585,6 +585,16 @@ final class MasterLibraryStore {
 
     // MARK: - Reset
 
+    /// Replace rather than reconcile after explicit deletion, so stale cached
+    /// mixtape-only tracks cannot be merged back into search results.
+    func replaceAfterDataClear(_ sourceTracks: [UnifiedTrack]) async {
+        reset()
+        guard let ownerID = AccountSessionStore.currentOwnerID else { return }
+        didHydrate = true
+        hydratedOwnerID = ownerID
+        await adopt(sourceTracks, providerIDs: Set(sourceTracks.map(\.providerID)))
+    }
+
     /// Forget everything (call on sign-out / account switch).
     func reset() {
         lifecycleID = UUID()
