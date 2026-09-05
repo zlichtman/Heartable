@@ -66,6 +66,8 @@ final class LocalAudioEngine {
     var onCompletion: (@MainActor (String) -> Void)?
     /// In-flight crossfade ramp; cancelled if the user acts mid-fade.
     private var fadeTask: Task<Void, Never>?
+    private var fadeProgress: Float?
+    private var settings = AudioSettings.current()
     /// A first play waits for background audio-session activation. Keeping the
     /// task lets pause/stop or a newer play cancel an obsolete deferred start.
     private var pendingPlayTask: Task<Void, Never>?
@@ -111,7 +113,7 @@ final class LocalAudioEngine {
     }
 
     private func startPlayback(_ meta: NowPlaying, url: URL) {
-        let settings = AudioSettings.current()
+        applySettings(AudioSettings.current())
         let target = settings.targetVolume
 
         // Crossfade only makes sense when something is already audibly playing and
@@ -121,11 +123,10 @@ final class LocalAudioEngine {
             && nowPlaying != nil
             && active.timeControlStatus == .playing
 
-        fadeTask?.cancel()
-        fadeTask = nil
+        settleFade()
 
         if shouldCrossfade {
-            crossfade(to: meta, url: url, target: target)
+            crossfade(to: meta, url: url, duration: settings.crossfadeDuration)
         } else {
             hardSwitch(to: meta, url: url, target: target)
         }
@@ -145,7 +146,7 @@ final class LocalAudioEngine {
 
     /// Overlap two players: incoming starts silent on the idle player and ramps up
     /// while the outgoing (currently active) player ramps down, then we swap.
-    private func crossfade(to meta: NowPlaying, url: URL, target: Float) {
+    private func crossfade(to meta: NowPlaying, url: URL, duration: TimeInterval) {
         let outgoing = active
         let incoming = idle
         let item = AVPlayerItem(url: url)
@@ -156,12 +157,10 @@ final class LocalAudioEngine {
         // Swap which player is "active" up front so position/now-playing reflect
         // the incoming track immediately; the outgoing player keeps fading.
         activeIsA.toggle()
+        fadeProgress = 0
         nowPlaying = meta
         positionMs = 0
         isPlaying = true
-
-        let duration = AudioSettings.crossfadeDuration
-        let outStart = outgoing.volume
 
         // Inherits MainActor isolation, so touching the players and @Observable
         // state here is safe and stays on the main thread.
@@ -169,19 +168,48 @@ final class LocalAudioEngine {
             let steps = 40
             let stepNanos = UInt64(duration / Double(steps) * 1_000_000_000)
             for i in 1...steps {
-                if Task.isCancelled { return }
-                let t = Float(i) / Float(steps)
-                incoming.volume = target * t
-                outgoing.volume = outStart * (1 - t)
+                guard !Task.isCancelled, let self else { return }
+                self.fadeProgress = Float(i) / Float(steps)
+                self.applyVolumes()
                 try? await Task.sleep(nanoseconds: stepNanos)
             }
-            if Task.isCancelled { return }
-            incoming.volume = target
+            guard !Task.isCancelled, let self else { return }
+            self.fadeProgress = nil
+            incoming.volume = self.settings.targetVolume
             outgoing.volume = 0
             outgoing.pause()
             outgoing.replaceCurrentItem(with: nil)
-            self?.fadeTask = nil
+            self.fadeTask = nil
         }
+    }
+
+    /// Settings apply while playing or paused, including both sides of a fade.
+    /// Never touch the system output volume or a provider-owned player.
+    func applySettings(_ settings: AudioSettings) {
+        self.settings = settings
+        if !settings.crossfade, fadeTask != nil { settleFade() }
+        applyVolumes()
+    }
+
+    private func applyVolumes() {
+        if let fadeProgress {
+            let gains = settings.fadeVolumes(progress: fadeProgress)
+            active.volume = gains.incoming
+            idle.volume = gains.outgoing
+        } else {
+            active.volume = settings.targetVolume
+            idle.volume = 0
+        }
+    }
+
+    private func settleFade() {
+        fadeTask?.cancel()
+        fadeTask = nil
+        fadeProgress = nil
+        idle.pause()
+        idle.volume = 0
+        idle.replaceCurrentItem(with: nil)
+        active.volume = settings.targetVolume
     }
 
     func toggle() {
@@ -190,15 +218,18 @@ final class LocalAudioEngine {
             return
         }
         if active.timeControlStatus == .playing { pause() }
-        else { active.play(); isPlaying = true }
+        else {
+            applySettings(AudioSettings.current())
+            active.play()
+            isPlaying = true
+        }
     }
 
     func pause() {
         pendingPlayTask?.cancel()
         pendingPlayTask = nil
         // Cancel any in-flight fade and quiet the idle/outgoing player too.
-        fadeTask?.cancel()
-        fadeTask = nil
+        settleFade()
         active.pause()
         idle.pause()
         isPlaying = false
@@ -212,8 +243,7 @@ final class LocalAudioEngine {
     func stop() {
         pendingPlayTask?.cancel()
         pendingPlayTask = nil
-        fadeTask?.cancel()
-        fadeTask = nil
+        settleFade()
         playerA.pause()
         playerB.pause()
         playerA.replaceCurrentItem(with: nil)

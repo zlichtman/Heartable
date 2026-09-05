@@ -1,48 +1,56 @@
 import Foundation
 
-/// Reads the in-app audio preferences set in `SoundsView` straight from the same
-/// `@AppStorage` (UserDefaults) keys, so `LocalAudioEngine` and the settings UI
-/// stay in sync without an injected store. These prefs only affect audio Heartable
-/// streams itself (Audius full tracks, Deezer 30s previews) — Spotify and Apple
-/// Music play through their own apps and can't be processed here.
-///
-/// A plain `Sendable` snapshot read on demand (UserDefaults reads are cheap and the
-/// values change rarely), so there's nothing to inject into the environment.
+/// Device-level controls for Heartable's direct streams, not provider-owned
+/// players. No normalization claim: a fixed player gain cannot measure loudness.
 struct AudioSettings: Sendable, Equatable {
-    /// Whether to fade the outgoing track down and the incoming track up at a
-    /// track change. Genuinely applied by the engine.
-    var crossfade: Bool
-    /// A conservative loudness trim (NOT full ReplayGain) applied via player
-    /// volume so in-app tracks don't jump out louder than the rest of the system.
-    var normalize: Bool
+    let crossfade: Bool
+    let volume: Double
+    let crossfadeDuration: TimeInterval
 
-    /// Crossfade duration. Matches the "2s overlap" copy in `SoundsView`.
-    static let crossfadeDuration: TimeInterval = 2.0
+    static let defaultVolume = 0.82
+    static let defaultCrossfadeDuration: TimeInterval = 2
+    static let crossfadeDurationRange: ClosedRange<Double> = 1...8
 
-    /// Target player volume when `normalize` is on. A modest, fixed trim that
-    /// evens out the worst loudness jumps without measuring per-track gain.
-    static let normalizedVolume: Float = 0.82
-    static let fullVolume: Float = 1.0
-
-    /// AppStorage / UserDefaults keys, shared with `SoundsView`.
     enum Key {
         static let crossfade = "heartable.sounds.crossfade"
-        static let normalize = "heartable.sounds.normalize"
+        static let volume = "heartable.sounds.volume"
+        static let crossfadeDuration = "heartable.sounds.crossfadeDuration"
+        /// Read-only compatibility with builds that called a fixed 82% gain
+        /// "Consistent volume". Keep the same loudness on upgrade.
+        static let legacyNormalize = "heartable.sounds.normalize"
     }
 
-    /// Snapshot the current preferences from `UserDefaults`.
+    init(crossfade: Bool, volume: Double, crossfadeDuration: TimeInterval = defaultCrossfadeDuration) {
+        self.crossfade = crossfade
+        self.volume = volume.isFinite ? min(1, max(0, volume)) : Self.defaultVolume
+        self.crossfadeDuration = crossfadeDuration.isFinite
+            ? min(Self.crossfadeDurationRange.upperBound,
+                  max(Self.crossfadeDurationRange.lowerBound, crossfadeDuration))
+            : Self.defaultCrossfadeDuration
+    }
+
     static func current(_ defaults: UserDefaults = .standard) -> AudioSettings {
-        // `normalize` defaults to true in the UI; mirror that when the key is unset.
-        let normalize = defaults.object(forKey: Key.normalize) == nil
-            ? true
-            : defaults.bool(forKey: Key.normalize)
+        let legacyTrim = defaults.object(forKey: Key.legacyNormalize) == nil
+            || defaults.bool(forKey: Key.legacyNormalize)
+        let volume = defaults.object(forKey: Key.volume) == nil
+            ? (legacyTrim ? defaultVolume : 1)
+            : defaults.double(forKey: Key.volume)
+        let duration = defaults.object(forKey: Key.crossfadeDuration) == nil
+            ? defaultCrossfadeDuration
+            : defaults.double(forKey: Key.crossfadeDuration)
         return AudioSettings(
             crossfade: defaults.bool(forKey: Key.crossfade),
-            normalize: normalize
+            volume: volume,
+            crossfadeDuration: duration
         )
     }
 
-    /// The volume the engine should target for a freshly-started track given the
-    /// current normalization preference.
-    var targetVolume: Float { normalize ? Self.normalizedVolume : Self.fullVolume }
+    var targetVolume: Float { Float(volume) }
+
+    /// Complementary gains keep changes in the volume slider live during a
+    /// transition. A cancelled fade always settles at the current target gain.
+    func fadeVolumes(progress: Float) -> (incoming: Float, outgoing: Float) {
+        let fraction = progress.isFinite ? min(1, max(0, progress)) : 1
+        return (targetVolume * fraction, targetVolume * (1 - fraction))
+    }
 }

@@ -67,21 +67,14 @@ struct ListeningHistoryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button {
+                Button("Clear listening history", systemImage: "trash") {
                     confirmClear = true
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(theme.palette.rose)
-                        .frame(width: 44, height: 44)
-                        .background(
-                            Circle()
-                                .fill(theme.palette.roseDim)
-                                .frame(width: 32, height: 32)
-                        )
                 }
-                .disabled(history.isEmpty)
-                .accessibilityLabel("Clear listening history")
+                .labelStyle(.iconOnly)
+                .tint(theme.palette.rose)
+                // The toolbar supplies its own surface and hit target. Drawing
+                // another circle inside it produces a button-within-a-button.
+                .disabled(loading || history.isEmpty || clearingHistory)
             }
         }
         .sheet(isPresented: $confirmClear) {

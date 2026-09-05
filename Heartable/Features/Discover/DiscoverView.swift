@@ -17,7 +17,8 @@ struct DiscoverView: View {
 
     @State private var store = DiscoverStore()
     @State private var mode: Mode = .top
-    @State private var topSource: TopTracksSource = .heartable
+    @State private var topSelection = TopTracksSelection()
+    @State private var topSelectionRequestID: UUID?
     @State private var topRange: StatRange = .shortTerm
     @State private var boardWindow: Int = 7
 
@@ -37,12 +38,33 @@ struct DiscoverView: View {
         )
     }
 
+    private var topSource: TopTracksSource {
+        topSelection.source
+            ?? TopTracksSelection.preferredOrder(selectableTopSources).first
+            ?? .heartable
+    }
+
+    private var topSourceBinding: Binding<TopTracksSource> {
+        Binding(get: { topSource }, set: { topSelection.select($0) })
+    }
+
+    private func resolveTopSource() {
+        topSelection.resolve(
+            availableSources: selectableTopSources,
+            populatedSources: Set(selectableTopSources.filter {
+                !topTracks.tracks(for: topRange, source: $0).isEmpty
+            })
+        )
+    }
+
     /// One stable request identity replaces the overlapping mode/range/window
     /// tasks that could issue the same initial request twice.
     private var loadRequest: String {
         switch mode {
         case .top:
-            "top:\(topSource.rawValue):\(topRange.rawValue):\(providers.refreshGeneration)"
+            // Automatic fallback is part of this request, not a second task that
+            // cancels the first one halfway through publishing its cache.
+            "top:\(topSelection.explicitSource?.rawValue ?? "auto"):\(topRange.rawValue):\(providers.refreshGeneration)"
         case .board: "board:\(boardWindow)"
         case .friends: "friends"
         }
@@ -88,11 +110,6 @@ struct DiscoverView: View {
             .onChange(of: friendsRequestID, initial: true) {
                 if friendsRequestID != nil { mode = .friends }
             }
-            .onChange(of: providers.refreshGeneration) {
-                if !selectableTopSources.contains(topSource) {
-                    topSource = .heartable
-                }
-            }
             .refreshable {
                 await store.loadFriends()
                 await reloadMode(force: true)
@@ -103,16 +120,41 @@ struct DiscoverView: View {
     private func reloadMode(force: Bool = false) async {
         switch mode {
         case .top:
+            let requestID = UUID()
+            topSelectionRequestID = requestID
+            defer {
+                if topSelectionRequestID == requestID { topSelectionRequestID = nil }
+            }
             // Disk cache is independent of provider discovery, so render it
             // immediately while the authoritative connection probe completes.
             await topTracks.prepare()
+            guard !Task.isCancelled else { return }
+            resolveTopSource()
             guard providers.hasRefreshed else { return }
+            let selected = topSource
             await topTracks.load(
                 range: topRange,
-                source: topSource,
+                source: selected,
                 providers: providers.connected,
                 force: force
             )
+            guard !Task.isCancelled, topSelectionRequestID == requestID,
+                  topSelection.explicitSource == nil,
+                  topTracks.tracks(for: topRange, source: selected).isEmpty else { return }
+
+            // A connected service can still have no ranking. Try the other real
+            // sources only when needed; never manufacture stats from a library.
+            for fallback in TopTracksSelection.preferredOrder(selectableTopSources)
+                where fallback != selected {
+                await topTracks.load(
+                    range: topRange, source: fallback,
+                    providers: providers.connected, force: force
+                )
+                guard !Task.isCancelled, topSelectionRequestID == requestID,
+                      topSelection.explicitSource == nil else { return }
+                resolveTopSource()
+                if !topTracks.tracks(for: topRange, source: topSource).isEmpty { break }
+            }
         case .board: await store.loadBoard(windowDays: boardWindow)
         case .friends: break  // FriendsHub owns its own loading
         }
@@ -192,7 +234,7 @@ struct DiscoverView: View {
         switch mode {
         case .top:
             VStack(alignment: .leading, spacing: 8) {
-                Picker("Stats source", selection: $topSource) {
+                Picker("Stats source", selection: topSourceBinding) {
                     ForEach(selectableTopSources) { source in
                         Text(source.label).tag(source)
                     }
@@ -225,7 +267,7 @@ struct DiscoverView: View {
         case .friends:
             FriendsHub()
         case .top:
-            if (!providers.hasRefreshed
+            if (!providers.hasRefreshed || topSelectionRequestID != nil
                 || topTracks.isInitiallyLoading(topRange, source: topSource)),
                topTracks.tracks(for: topRange, source: topSource).isEmpty {
                 ProgressView()

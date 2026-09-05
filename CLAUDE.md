@@ -134,6 +134,13 @@ an active Heartable session. `AppleMusicQueue` resolves its first song immediate
 and batches the remaining native entries, guarded by a cancellation generation.
 Never use a MusicKit queue-entry ID as a provider song ID.
 
+`AudioSettings` controls only Heartable's direct streams: gain and crossfade
+duration. Preserve the previous fixed-volume preference when migrating; never
+label a static gain as loudness normalization. Apply volume changes to both
+players during a fade, and settle cancelled fades before pause/resume so a track
+does not remain at partial gain. Provider-owned audio effects stay with Spotify
+and Apple Music.
+
 ## Library and cache rules
 
 The library is cache-first and stale-while-revalidate:
@@ -183,6 +190,13 @@ a provider import. Keep scopes explicit:
 Do not inflate Heartable totals with Apple Music library items. Cross-provider
 deduplication should combine recordings only after source counts are correctly
 derived.
+
+On first opening Top Tracks, `TopTracksSelection` prefers a populated cache
+(Spotify first), then a connected Spotify source if caches are empty. If that
+automatic source has no results, try another supported source. Keep a deliberate
+selection for the screen session, even when empty; drop it only if the source is
+no longer available. Auto-fallback must not create overlapping view-load tasks or
+delay painting already-cached results. Never expose Apple library rows as stats.
 
 ## Social and profile
 

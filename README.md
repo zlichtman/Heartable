@@ -28,7 +28,7 @@ name.
 ## Current release
 
 - Marketing version: **1.0.0**
-- Build: **47**
+- Build: **48**
 - Minimum OS: **iOS 26**
 - Toolchain: **Swift 6**, SwiftUI, XcodeGen, Swift Package Manager
 - Backend: **Supabase**
@@ -83,6 +83,14 @@ device, then installs the Heartable queue. Spotify requires a brief app switch;
 it cannot be cold-started invisibly on iOS. Same-service native queues continue in
 the background; mixed-service boundaries require Heartable to be active. Provider
 subscription, installation, and API capability limits still apply.
+
+Build 48 opens Top Tracks on a source with cached stats, preferring Spotify on
+first open when both sources have data or when a new account has no cache. Empty
+automatic selections fall back to another supported stats source; deliberate
+source selections stay put. Listening History uses one native toolbar trash
+button. Sounds adds live direct-stream volume and adjustable 1–8 second
+crossfades, preserving previous volume preferences without claiming loudness
+normalization or control over Spotify/Apple Music audio effects.
 
 Home Screen widgets include Weekly Recap, Friends Listening, and Heartable
 Shortcuts. Weekly Recap also supports the rectangular Lock Screen slot;
