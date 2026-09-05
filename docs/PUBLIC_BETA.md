@@ -121,6 +121,13 @@ registration to an unrestricted public cohort.
       Check Home Screen and notification artwork separately. iOS owns the
       notification header and may retain artwork on older delivered notices;
       Heartable must not delete notification history or spoof sender icons.
+- [ ] Add all three widgets in small/medium sizes. Switch light/dark presets,
+      edit the active custom theme, then delete it; existing widgets should
+      receive the current semantic palette without removal/re-adding. Allow
+      WidgetKit's refresh scheduling. Verify tinted/clear Home Screen modes
+      and supported Lock Screen slots remain legible, including empty states.
+- [ ] Sign out with widgets installed: private recap/friend data disappears,
+      but the device's selected widget palette remains.
 - [ ] Verify launch/hang diagnostics and Supabase Auth/API/Storage logs for the
       processed build, with no repeated crash, RLS, or authorization failures.
 - [ ] Start with a small external cohort and manual rollout; widen only after

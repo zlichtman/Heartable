@@ -6,6 +6,13 @@ import WidgetKit
 /// types and never links backend/provider code.
 extension WidgetSnapshotStore {
     @MainActor
+    static func publish(theme: ThemeDef) {
+        if WidgetThemeStore.save(HeartableWidgetTheme(theme: theme)) {
+            WidgetCenter.shared.reloadAllTimelines()
+        }
+    }
+
+    @MainActor
     static func update(weeklyRecap recap: WeeklyRecap?) {
         let snapshot = recap.map {
             WidgetWeeklyRecapSnapshot(
@@ -53,5 +60,20 @@ extension WidgetSnapshotStore {
     static func clearAndReloadWidgets() {
         clear()
         WidgetCenter.shared.reloadAllTimelines()
+    }
+}
+
+extension HeartableWidgetTheme {
+    /// Resolve the very same semantic palette used by the app, including custom
+    /// edits. This is intentionally app-only; widgets never load ThemeStore.
+    @MainActor
+    init(theme: ThemeDef) {
+        let palette = theme.palette
+        self.init(
+            version: 1, key: theme.key,
+            background: RGBAColor(palette.bg), surface: RGBAColor(palette.surface),
+            text: RGBAColor(palette.text), secondaryText: RGBAColor(palette.textSecondary),
+            accent: RGBAColor(palette.rose), border: RGBAColor(palette.border)
+        )
     }
 }

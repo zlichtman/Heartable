@@ -72,6 +72,14 @@ Weekly labels must expire at the week boundary. Widget deep links use the
 allow-listed `HeartableWidgetRoute` contract and wait for authentication before
 navigating. Do not imply WidgetKit refreshes are real-time playback updates.
 
+Widget appearance uses `HeartableWidgetTheme` in a separate app-group key from
+private content. `ThemeStore` publishes resolved semantic colors on launch,
+selection, and active custom-theme edits/deletion. Reload timelines only when
+the published palette changes. Full-color widgets follow the app palette;
+accented/vibrant contexts defer contrast to WidgetKit, with only glyphs in the
+accent group. Never hard-code a second widget theme or clear device appearance
+when clearing account content.
+
 State that belongs to a user must either live in a store reset by the account
 shell or use an account-scoped persistence key/file. Register provider
 credentials and account-owned preferences with `AccountSessionStore`.

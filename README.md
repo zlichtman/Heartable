@@ -115,6 +115,12 @@ Shortcuts supports a circular Lock Screen slot. Add them through iOS's widget
 gallery after opening Heartable once. Widget taps route into the relevant app
 screen; they do not attempt background provider playback.
 
+Build 51 makes all three widgets follow the selected app theme, including custom
+palettes and edits. Appearance is stored separately from private widget content,
+so signing out clears listening data without resetting the widget's colors.
+Theme changes request a WidgetKit timeline refresh; iOS controls refresh timing
+and its tinted/clear Home Screen and Lock Screen rendering modes.
+
 Account-owned state is namespaced by the Supabase user. Provider pairing intent
 is stored in an RLS-protected account manifest, while provider secrets remain in
 account-scoped, iCloud-synchronizable Keychain items. A normal sign-out clears

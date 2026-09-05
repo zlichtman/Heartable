@@ -43,12 +43,14 @@ final class ThemeStore {
         let installedIcon = UIApplication.shared.alternateIconName ?? Self.coreIconKey
         appIconKey = installedIcon
         UserDefaults.standard.set(installedIcon, forKey: Self.iconStorageKey)
+        WidgetSnapshotStore.publish(theme: current)
     }
 
     func setTheme(_ key: String) {
         guard key != current.key else { return }
         current = Self.resolve(key, custom: customThemes)
         UserDefaults.standard.set(key, forKey: Self.storageKey)
+        WidgetSnapshotStore.publish(theme: current)
     }
 
     /// Resolve a key to a `ThemeDef`, checking custom themes first, then presets.
@@ -65,6 +67,7 @@ final class ThemeStore {
         customThemes.upsert(theme)
         if current.key == theme.key {
             current = theme.themeDef()
+            WidgetSnapshotStore.publish(theme: current)
         }
     }
 

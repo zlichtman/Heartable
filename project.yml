@@ -17,7 +17,7 @@ settings:
     SWIFT_VERSION: "6.0"
     DEVELOPMENT_TEAM: "28LJG7MXT3"
     MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "50"
+    CURRENT_PROJECT_VERSION: "51"
     SWIFT_STRICT_CONCURRENCY: complete
     ENABLE_USER_SCRIPT_SANDBOXING: "NO"
 
@@ -72,6 +72,8 @@ targets:
       - path: HeartableWidget
       - path: Heartable/Shared/HeartableWidgetSnapshot.swift
       - path: Heartable/Shared/HeartableWidgetRoute.swift
+      - path: Heartable/Shared/HeartableWidgetTheme.swift
+      - path: Heartable/Design/RGBAColor.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.zlichtman.heartable.widget

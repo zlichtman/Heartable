@@ -59,10 +59,12 @@
 		473B0BBE51ACFEAA13749398 /* ThemeEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 531A941E04AFF80DF9B42641 /* ThemeEditorView.swift */; };
 		47DCE9B3F5EE0A66689DBA60 /* WeeklyRecapBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37BD0633EF6066ADFB3CFF19 /* WeeklyRecapBuilder.swift */; };
 		4918D0151E6E9766E0D6D9C0 /* AppleMusicQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = F42CB920A5AA9BD6A1F8529A /* AppleMusicQueue.swift */; };
+		49BD48DD1583CA9FC220A5B0 /* WidgetThemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 012A08B7AAA66B6A5C454D02 /* WidgetThemeTests.swift */; };
 		4E9F86C7F5EC51D4E2D6F478 /* PlaylistCachePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75847A5DAE2F7F4575B221A8 /* PlaylistCachePolicyTests.swift */; };
 		4EA4917AD033E77C61537822 /* BackendAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7F3D31F81B00BE38286EC01 /* BackendAPI.swift */; };
 		4F27CBA910BDB0AE43CE0D4F /* ArtistAvatar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84825AD1F9B633A66953DE81 /* ArtistAvatar.swift */; };
 		4FEFBC4730C73A522CBFDD59 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 4F7FA79D09B8531AECB3660F /* Supabase */; };
+		50F672D19144154989F40F7F /* HeartableWidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C25BF9D306B9D0ECF424C64 /* HeartableWidgetTheme.swift */; };
 		552CC476089D0929E4A5C489 /* HeartableWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0362F889C4DD297F5DE85239 /* HeartableWidgetBundle.swift */; };
 		57451113B036509C13FC6B9E /* DrawerLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0815576AC34598E6D134733 /* DrawerLayoutTests.swift */; };
 		578C51826C07AF666E7BC655 /* ProviderID.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCEAA013199521B953D28F73 /* ProviderID.swift */; };
@@ -91,6 +93,7 @@
 		6F4F970877BAB30617574DDD /* ThemesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2E22A70EE59D5D3B1793B0D /* ThemesView.swift */; };
 		70EE545304BE10A98D6F8705 /* HeartableApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF792154BF3CEE3CC5048C55 /* HeartableApp.swift */; };
 		7259CFAF827A49811F8401A9 /* MixtapeEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3D157C5D5A2AE551801C918 /* MixtapeEditorView.swift */; };
+		7348BE2F638F7A3E66B9F836 /* HeartableWidgetTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C25BF9D306B9D0ECF424C64 /* HeartableWidgetTheme.swift */; };
 		77AE9E46C20A9C84A994BBA9 /* DiscoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C64AAD9E453416CD3D2BD8EB /* DiscoverView.swift */; };
 		7AFEFD6094E5C543C4DB0F46 /* PlaylistTracksRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60AA9CFF3DDB735AF422D92B /* PlaylistTracksRepository.swift */; };
 		7BA1817C4C86F9B91365EEC4 /* PlaybackHandoffTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E6449F6189C5A333A04B468 /* PlaybackHandoffTests.swift */; };
@@ -108,6 +111,7 @@
 		8D6E0DD3521F430A3DC0B8A1 /* ChatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A024CFFA38C60080D641DC6 /* ChatsView.swift */; };
 		8F4954C40501C2D6FA764BAF /* PlaybackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = E76F95A1C675235EC72E70FA /* PlaybackEngine.swift */; };
 		903FC963186D16FCAE640876 /* SoundSettingsLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40AB957161C8E61206BF8D09 /* SoundSettingsLayoutTests.swift */; };
+		9132FEEDEE392A6DDD9FBF87 /* RGBAColor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85267AF1C3DF2D2B9DAF8AAC /* RGBAColor.swift */; };
 		913B327C081D0BEFA17DDDE5 /* UnifiedTrackRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB527D97A87DE283A588B7F6 /* UnifiedTrackRow.swift */; };
 		918443E616CD7A9CDCAA817D /* RadioBrowserProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12C646F22B0A7D4982EA36A /* RadioBrowserProvider.swift */; };
 		91DC22A0EA508CF8CE3B2891 /* ProviderPlayback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 422217ECE9C87B8FA913CDFD /* ProviderPlayback.swift */; };
@@ -229,6 +233,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		012A08B7AAA66B6A5C454D02 /* WidgetThemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetThemeTests.swift; sourceTree = "<group>"; };
 		01EA2C32465E82CF45ADA916 /* ProfileCurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileCurationTests.swift; sourceTree = "<group>"; };
 		0289529F3B68758F7F30A06C /* HeartableWidgetExtension.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = HeartableWidgetExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		0296C441D7F7FCFD9C3284E5 /* PresentationAnchorResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PresentationAnchorResolver.swift; sourceTree = "<group>"; };
@@ -347,6 +352,7 @@
 		97F7C23E74D57F47B707C549 /* SnapshotImport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotImport.swift; sourceTree = "<group>"; };
 		9963A42D323613CD16D9BA58 /* PlaylistDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaylistDetailView.swift; sourceTree = "<group>"; };
 		9C1A4D870C415D1A259BB708 /* MixtapesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MixtapesView.swift; sourceTree = "<group>"; };
+		9C25BF9D306B9D0ECF424C64 /* HeartableWidgetTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeartableWidgetTheme.swift; sourceTree = "<group>"; };
 		9CF141D71981500B1C2708FE /* LikedSongsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LikedSongsView.swift; sourceTree = "<group>"; };
 		9E157AECA964222D618C67E9 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		9E65612D713F082FA5EE8EC3 /* NotificationsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationsView.swift; sourceTree = "<group>"; };
@@ -615,6 +621,7 @@
 			children = (
 				54DF502B6AF082C61B9136DE /* HeartableWidgetRoute.swift */,
 				C1D0E8A3ECDA4CB02F5602F2 /* HeartableWidgetSnapshot.swift */,
+				9C25BF9D306B9D0ECF424C64 /* HeartableWidgetTheme.swift */,
 			);
 			path = Shared;
 			sourceTree = "<group>";
@@ -818,6 +825,7 @@
 				60327C2FD6112BFC9AC25E6E /* VinylShelfTests.swift */,
 				2DBE282B9BEC6A71824F11CF /* WeeklyRecapTests.swift */,
 				740ED112ADA8DF47B5698489 /* WidgetSnapshotTests.swift */,
+				012A08B7AAA66B6A5C454D02 /* WidgetThemeTests.swift */,
 			);
 			path = HeartableTests;
 			sourceTree = "<group>";
@@ -1038,7 +1046,9 @@
 				552CC476089D0929E4A5C489 /* HeartableWidgetBundle.swift in Sources */,
 				B22CDB0901CA8C43CCE3D546 /* HeartableWidgetRoute.swift in Sources */,
 				836EF3F60E72F41FA63F5DAE /* HeartableWidgetSnapshot.swift in Sources */,
+				50F672D19144154989F40F7F /* HeartableWidgetTheme.swift in Sources */,
 				F56CFBF376696482658AAB12 /* HeartableWidgets.swift in Sources */,
+				9132FEEDEE392A6DDD9FBF87 /* RGBAColor.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1076,6 +1086,7 @@
 				6574C53B53E2FAA6CC687082 /* VinylShelfTests.swift in Sources */,
 				5B67232233678F94B0F4FA80 /* WeeklyRecapTests.swift in Sources */,
 				BC1339A96FBEAEE0FB420920 /* WidgetSnapshotTests.swift in Sources */,
+				49BD48DD1583CA9FC220A5B0 /* WidgetThemeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1132,6 +1143,7 @@
 				66736E4D8149AB5056F03FFF /* HeartableReorderSheet.swift in Sources */,
 				34DEB525CE9515A8997643F6 /* HeartableWidgetRoute.swift in Sources */,
 				C2CD21FE07328ED0571E364F /* HeartableWidgetSnapshot.swift in Sources */,
+				7348BE2F638F7A3E66B9F836 /* HeartableWidgetTheme.swift in Sources */,
 				873109ED9F716C2665071677 /* InternetArchiveProvider.swift in Sources */,
 				01E495E9EA50BDAFE67A58B8 /* JellyfinConnectSheet.swift in Sources */,
 				FC54E2D76A78E9F4FE9F0354 /* JellyfinProvider.swift in Sources */,
@@ -1318,7 +1330,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 50;
+				CURRENT_PROJECT_VERSION = 51;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 28LJG7MXT3;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -1442,7 +1454,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 50;
+				CURRENT_PROJECT_VERSION = 51;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 28LJG7MXT3;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;

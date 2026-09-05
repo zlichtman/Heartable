@@ -5,6 +5,7 @@ import UIKit
 private struct HeartableTimelineEntry: TimelineEntry {
     let date: Date
     let snapshot: HeartableWidgetSnapshot?
+    let theme: HeartableWidgetTheme
 }
 
 private struct HeartableTimelineProvider: TimelineProvider {
@@ -23,7 +24,8 @@ private struct HeartableTimelineProvider: TimelineProvider {
         completion(
             HeartableTimelineEntry(
                 date: Date(),
-                snapshot: WidgetSnapshotStore.load()?.displayed(at: Date())
+                snapshot: WidgetSnapshotStore.load()?.displayed(at: Date()),
+                theme: WidgetThemeStore.load()
             )
         )
     }
@@ -36,7 +38,8 @@ private struct HeartableTimelineProvider: TimelineProvider {
         let snapshot = WidgetSnapshotStore.load()
         let entry = HeartableTimelineEntry(
             date: now,
-            snapshot: snapshot?.displayed(at: now)
+            snapshot: snapshot?.displayed(at: now),
+            theme: WidgetThemeStore.load()
         )
         // App refreshes explicitly after real data changes. The periodic policy
         // keeps relative timestamps current without network work in the extension.
@@ -69,7 +72,7 @@ private struct HeartableTimelineProvider: TimelineProvider {
                     trackTitle: "Dreams", artist: "Fleetwood Mac",
                     playedAt: now.addingTimeInterval(-720))
             ]
-        ))
+        ), theme: WidgetThemeStore.load())
     }
 }
 
@@ -83,7 +86,7 @@ struct WeeklyRecapWidget: Widget {
                 .widgetURL(HeartableWidgetRoute.recap.url)
                 .privacySensitive()
                 .containerBackground(for: .widget) {
-                    HeartableWidgetPalette.paper
+                    entry.theme.background.color
                 }
         }
         .configurationDisplayName("Weekly Recap")
@@ -95,6 +98,10 @@ struct WeeklyRecapWidget: Widget {
 private struct WeeklyRecapWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: HeartableTimelineEntry
+    @Environment(\.widgetRenderingMode) private var renderingMode
+    private var colors: HeartableWidgetColors {
+        HeartableWidgetColors(theme: entry.theme, renderingMode: renderingMode)
+    }
 
     var body: some View {
         if let recap = entry.snapshot?.weeklyRecap, recap.playCount > 0 {
@@ -125,16 +132,16 @@ private struct WeeklyRecapWidgetView: View {
             Spacer(minLength: 0)
             Text("\(recap.playCount)")
                 .font(.system(.largeTitle, design: .rounded, weight: .bold))
-                .foregroundStyle(HeartableWidgetPalette.cocoa)
+                .foregroundStyle(colors.text)
                 .minimumScaleFactor(0.75)
             Text(recap.playCount == 1 ? "play" : "plays")
                 .font(.caption)
-                .foregroundStyle(HeartableWidgetPalette.cocoaSecondary)
+                .foregroundStyle(colors.secondaryText)
             if let title = recap.topTrackTitle {
-                Divider().overlay(HeartableWidgetPalette.brown.opacity(0.18))
+                Divider().overlay(colors.border)
                 Text(title)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(HeartableWidgetPalette.cocoa)
+                    .foregroundStyle(colors.text)
                     .lineLimit(1)
             }
         }
@@ -157,12 +164,12 @@ private struct WeeklyRecapWidgetView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(artist)
                             .font(.subheadline.weight(.bold))
-                            .foregroundStyle(HeartableWidgetPalette.cocoa)
+                            .foregroundStyle(colors.text)
                             .lineLimit(2)
                         Text("top artist")
                             .font(.caption2)
                             .foregroundStyle(
-                                HeartableWidgetPalette.cocoaSecondary
+                                colors.secondaryText
                             )
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -171,16 +178,17 @@ private struct WeeklyRecapWidgetView: View {
             if let title = recap.topTrackTitle {
                 HStack(spacing: 7) {
                     Image(systemName: "music.note")
-                        .foregroundStyle(HeartableWidgetPalette.pink)
+                        .foregroundStyle(colors.accent)
+                        .widgetAccentable()
                     Text(title)
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(HeartableWidgetPalette.cocoa)
+                        .foregroundStyle(colors.text)
                         .lineLimit(1)
                     if let artist = recap.topTrackArtist {
                         Text("· \(artist)")
                             .font(.caption)
                             .foregroundStyle(
-                                HeartableWidgetPalette.cocoaSecondary
+                                colors.secondaryText
                             )
                             .lineLimit(1)
                     }
@@ -217,10 +225,11 @@ private struct WeeklyRecapWidgetView: View {
             Spacer(minLength: 0)
             Image(systemName: "music.note")
                 .font(.title2.weight(.semibold))
-                .foregroundStyle(HeartableWidgetPalette.pink)
+                .foregroundStyle(colors.accent)
+                .widgetAccentable()
             Text("Your week starts with a song.")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(HeartableWidgetPalette.cocoa)
+                .foregroundStyle(colors.text)
                 .lineLimit(2)
         }
         .accessibilityElement(children: .combine)
@@ -229,11 +238,12 @@ private struct WeeklyRecapWidgetView: View {
     private func brandHeader(_ title: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "heart.fill")
-                .foregroundStyle(HeartableWidgetPalette.pink)
+                .foregroundStyle(colors.accent)
+                .widgetAccentable()
                 .accessibilityHidden(true)
             Text(title)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(HeartableWidgetPalette.cocoaSecondary)
+                .foregroundStyle(colors.secondaryText)
                 .lineLimit(1)
         }
     }
@@ -242,12 +252,12 @@ private struct WeeklyRecapWidgetView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(value)
                 .font(.title3.weight(.bold))
-                .foregroundStyle(HeartableWidgetPalette.cocoa)
+                .foregroundStyle(colors.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.72)
             Text(label)
                 .font(.caption2)
-                .foregroundStyle(HeartableWidgetPalette.cocoaSecondary)
+                .foregroundStyle(colors.secondaryText)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -275,7 +285,7 @@ struct FriendActivityWidget: Widget {
             FriendActivityWidgetView(entry: entry)
                 .widgetURL(HeartableWidgetRoute.friends.url)
                 .containerBackground(for: .widget) {
-                    HeartableWidgetPalette.paper
+                    entry.theme.background.color
                 }
                 .privacySensitive()
         }
@@ -288,6 +298,10 @@ struct FriendActivityWidget: Widget {
 private struct FriendActivityWidgetView: View {
     @Environment(\.widgetFamily) private var family
     let entry: HeartableTimelineEntry
+    @Environment(\.widgetRenderingMode) private var renderingMode
+    private var colors: HeartableWidgetColors {
+        HeartableWidgetColors(theme: entry.theme, renderingMode: renderingMode)
+    }
 
     private var activity: [WidgetFriendActivitySnapshot] {
         entry.snapshot?.friendActivity ?? []
@@ -297,10 +311,11 @@ private struct FriendActivityWidgetView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "person.2.fill")
-                    .foregroundStyle(HeartableWidgetPalette.pink)
+                    .foregroundStyle(colors.accent)
+                    .widgetAccentable()
                 Text("Friends listening")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(HeartableWidgetPalette.cocoaSecondary)
+                    .foregroundStyle(colors.secondaryText)
                     .lineLimit(1)
             }
 
@@ -308,7 +323,7 @@ private struct FriendActivityWidgetView: View {
                 Spacer(minLength: 0)
                 Text("No recent friend plays.")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(HeartableWidgetPalette.cocoa)
+                    .foregroundStyle(colors.text)
                     .lineLimit(3)
                 Spacer(minLength: 0)
             } else {
@@ -327,18 +342,19 @@ private struct FriendActivityWidgetView: View {
         HStack(spacing: 9) {
             Image(systemName: "heart.fill")
                 .font(.caption.weight(.bold))
-                .foregroundStyle(HeartableWidgetPalette.paper)
+                .foregroundStyle(colors.accent)
+                .widgetAccentable()
                 .frame(width: 30, height: 30)
-                .background(HeartableWidgetPalette.brown, in: Circle())
+                .background(colors.surface, in: Circle())
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(item.friendName)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(HeartableWidgetPalette.cocoaSecondary)
+                    .foregroundStyle(colors.secondaryText)
                     .lineLimit(1)
                 Text(item.trackTitle)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(HeartableWidgetPalette.cocoa)
+                    .foregroundStyle(colors.text)
                     .lineLimit(1)
                 HStack(spacing: 4) {
                     if let artist = item.artist, !artist.isEmpty {
@@ -349,7 +365,7 @@ private struct FriendActivityWidgetView: View {
                         .lineLimit(1)
                 }
                 .font(.caption2)
-                .foregroundStyle(HeartableWidgetPalette.cocoaSecondary)
+                .foregroundStyle(colors.secondaryText)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -357,20 +373,24 @@ private struct FriendActivityWidgetView: View {
     }
 }
 
-private enum HeartableWidgetPalette {
-    static let paper = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.12, green: 0.09, blue: 0.09, alpha: 1)
-            : UIColor(red: 1, green: 244.0 / 255, blue: 239.0 / 255, alpha: 1)
-    })
-    static let cocoa = Color(uiColor: UIColor { traits in
-        traits.userInterfaceStyle == .dark
-            ? UIColor(red: 0.98, green: 0.91, blue: 0.87, alpha: 1)
-            : UIColor(red: 67.0 / 255, green: 43.0 / 255, blue: 43.0 / 255, alpha: 1)
-    })
-    static let cocoaSecondary = cocoa.opacity(0.70)
-    static let brown = Color(red: 140 / 255, green: 90 / 255, blue: 80 / 255)
-    static let pink = Color(red: 232 / 255, green: 69 / 255, blue: 124 / 255)
+/// In full color, use the exact app palette. In tinted/clear and Lock Screen
+/// contexts, let WidgetKit own contrast; never flatten foregrounds and tiles
+/// into the same opaque white accent group.
+private struct HeartableWidgetColors {
+    let theme: HeartableWidgetTheme
+    let renderingMode: WidgetRenderingMode
+
+    var text: Color { renderingMode == .fullColor ? theme.text.color : .primary }
+    var secondaryText: Color {
+        renderingMode == .fullColor ? theme.secondaryText.color : .primary.opacity(0.7)
+    }
+    var accent: Color { renderingMode == .fullColor ? theme.accent.color : .primary }
+    var surface: Color {
+        renderingMode == .fullColor ? theme.surface.color : .primary.opacity(0.12)
+    }
+    var border: Color {
+        renderingMode == .fullColor ? theme.border.color : .primary.opacity(0.2)
+    }
 }
 
 struct QuickAccessWidget: Widget {
@@ -378,9 +398,9 @@ struct QuickAccessWidget: Widget {
         StaticConfiguration(
             kind: WidgetSnapshotStore.quickAccessWidgetKind,
             provider: HeartableTimelineProvider()
-        ) { _ in
-            QuickAccessWidgetView()
-                .containerBackground(HeartableWidgetPalette.paper, for: .widget)
+        ) { entry in
+            QuickAccessWidgetView(entry: entry)
+                .containerBackground(entry.theme.background.color, for: .widget)
         }
         .configurationDisplayName("Heartable Shortcuts")
         .description("Open your library, friends, or playlist backups.")
@@ -390,6 +410,11 @@ struct QuickAccessWidget: Widget {
 
 private struct QuickAccessWidgetView: View {
     @Environment(\.widgetFamily) private var family
+    @Environment(\.widgetRenderingMode) private var renderingMode
+    let entry: HeartableTimelineEntry
+    private var colors: HeartableWidgetColors {
+        HeartableWidgetColors(theme: entry.theme, renderingMode: renderingMode)
+    }
 
     var body: some View {
         if family == .accessoryCircular {
@@ -401,7 +426,7 @@ private struct QuickAccessWidgetView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Image(systemName: "heart.fill")
                     .font(.system(size: 40))
-                    .foregroundStyle(HeartableWidgetPalette.pink)
+                    .foregroundStyle(colors.accent)
                     .widgetAccentable()
                 Spacer(minLength: 0)
                 Text("Heartable")
@@ -412,7 +437,7 @@ private struct QuickAccessWidgetView: View {
                     Image(systemName: "arrow.up.right").font(.caption.weight(.semibold))
                 }
             }
-            .foregroundStyle(HeartableWidgetPalette.cocoa)
+            .foregroundStyle(colors.text)
             .widgetURL(HeartableWidgetRoute.library.url)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Open Heartable library")
@@ -420,7 +445,8 @@ private struct QuickAccessWidgetView: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 6) {
                     Image(systemName: "heart.fill")
-                        .foregroundStyle(HeartableWidgetPalette.pink)
+                        .foregroundStyle(colors.accent)
+                        .widgetAccentable()
                     Text("Heartable")
                         .font(.system(.headline, design: .serif))
                 }
@@ -430,7 +456,7 @@ private struct QuickAccessWidgetView: View {
                     shortcut(.backups, "Backups", "externaldrive.fill")
                 }
             }
-            .foregroundStyle(HeartableWidgetPalette.cocoa)
+            .foregroundStyle(colors.text)
         }
     }
 
@@ -439,7 +465,7 @@ private struct QuickAccessWidgetView: View {
             VStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.title2)
-                    .foregroundStyle(HeartableWidgetPalette.pink)
+                    .foregroundStyle(colors.accent)
                     .widgetAccentable()
                 Text(title)
                     .font(.caption.weight(.semibold))
@@ -447,7 +473,7 @@ private struct QuickAccessWidgetView: View {
                     .minimumScaleFactor(0.8)
             }
             .frame(maxWidth: .infinity, minHeight: 68)
-            .background(HeartableWidgetPalette.brown.opacity(0.10), in: RoundedRectangle(cornerRadius: 16))
+            .background(colors.surface, in: RoundedRectangle(cornerRadius: 16))
         }
         .accessibilityLabel("Open \(title)")
     }
