@@ -17,11 +17,14 @@ settings:
     SWIFT_VERSION: "6.0"
     DEVELOPMENT_TEAM: "28LJG7MXT3"
     MARKETING_VERSION: "1.0.0"
-    CURRENT_PROJECT_VERSION: "46"
+    CURRENT_PROJECT_VERSION: "47"
     SWIFT_STRICT_CONCURRENCY: complete
     ENABLE_USER_SCRIPT_SANDBOXING: "NO"
 
 packages:
+  SpotifyiOS:
+    url: https://github.com/spotify/ios-sdk
+    exactVersion: "5.0.1"
   Supabase:
     url: https://github.com/supabase/supabase-swift
     # Public builds resolve the dependency graph deterministically. Upgrade this
@@ -55,6 +58,8 @@ targets:
         SUPPORTS_MACCATALYST: "NO"
         ENABLE_PREVIEWS: "YES"
     dependencies:
+      - package: SpotifyiOS
+        product: SpotifyiOS
       - package: Supabase
         product: Supabase
       - target: HeartableWidgetExtension

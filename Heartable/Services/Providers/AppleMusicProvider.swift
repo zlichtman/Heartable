@@ -272,7 +272,7 @@ struct AppleMusicProvider: MusicProvider {
     /// Resolves a playable `Song` from a provider track id. Library ids start
     /// with `l.`; everything else is a catalog id. We try the matching surface
     /// first and fall back to the other so a verbatim id from either source plays.
-    private static func resolveSong(for trackID: String) async throws -> Song? {
+    static func resolveSong(for trackID: String) async throws -> Song? {
         let itemID = MusicItemID(trackID)
 
         if trackID.hasPrefix("l.") {

@@ -38,16 +38,25 @@ private struct HeartableSheetChrome: ViewModifier {
 struct HeartableDrawer<Content: View>: View {
     @Environment(ThemeStore.self) private var theme
     @ViewBuilder var content: Content
+    @State private var contentHeight: CGFloat = 240
 
     var body: some View {
-        ViewThatFits(in: .vertical) {
+        ScrollView {
             content
-            ScrollView { content }
-                .scrollIndicators(.hidden)
-                .scrollBounceBehavior(.basedOnSize)
+                .fixedSize(horizontal: false, vertical: true)
+                .onGeometryChange(for: CGFloat.self) { geometry in
+                    ceil(geometry.size.height)
+                } action: { height in
+                    guard height > 0, abs(contentHeight - height) > 1 else { return }
+                    contentHeight = height
+                }
         }
+        .scrollIndicators(.hidden)
+        .scrollBounceBehavior(.basedOnSize)
         .background(theme.palette.bg.ignoresSafeArea())
-        .presentationSizing(.fitted)
+        // iPhone bottom sheets need an explicit detent. The system clamps it to
+        // the available screen/keyboard height; oversized content stays scrollable.
+        .presentationDetents([.height(contentHeight)])
         .heartableSheetChrome()
     }
 }
@@ -240,7 +249,7 @@ struct HeartablePromptSheet: View {
                 .submitLabel(.done)
                 .focused($focused)
                 .onSubmit {
-                    guard !trimmed.isEmpty else { return }
+                    guard !trimmed.isEmpty, !isBusy else { return }
                     onSubmit()
                 }
                 .padding(.horizontal, 15)

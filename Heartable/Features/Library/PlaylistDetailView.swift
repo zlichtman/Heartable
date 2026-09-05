@@ -162,9 +162,10 @@ struct PlaylistDetailView: View {
                         .listRowBackground(Color.clear)
                         .listRowSeparator(.hidden)
 
-                    ForEach(Array(displayedTracks.enumerated()), id: \.element.id) { index, track in
+                    ForEach(Array(displayedTracks.enumerated()), id: \.offset) { index, track in
                         UnifiedTrackRow(track: track, rank: index + 1) {
-                            Task { await player.play(track) }
+                            Task { await player.play(tracks: displayedTracks, startingAt: index,
+                                                     mode: prefs.mode, weights: prefs.weights) }
                         }
                         .padding(.horizontal, 12)
                         .background(
@@ -384,10 +385,6 @@ struct PlaylistDetailView: View {
     private func playAll() async {
         guard !tracks.isEmpty else { return }
         sortStore.recordPlayed(playlist.key)   // powers the Library "Recent" sort
-        let ordered = prefs.order(tracks.map(\.uri))
-        guard let firstURI = ordered.first,
-              let first = tracks.first(where: { $0.uri == firstURI }) ?? tracks.first
-        else { return }
-        await player.play(first)
+        await player.play(tracks: displayedTracks, mode: prefs.mode, weights: prefs.weights)
     }
 }

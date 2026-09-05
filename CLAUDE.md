@@ -27,7 +27,7 @@ engineering contracts that must survive future work.
 - Default branch: `main`
 - Xcode project and scheme: `Heartable`
 - Apple team: `28LJG7MXT3`
-- App Store Connect Apple ID: assigned when the clean Heartable record is created
+- App Store Connect Apple ID: `6775338227`
 - App bundle ID: `com.zlichtman.heartable`
 - Widget bundle ID: `com.zlichtman.heartable.widget`
 - App Group: `group.com.zlichtman.heartable`
@@ -43,7 +43,7 @@ engineering contracts that must survive future work.
 - iOS 26 minimum
 - Swift Package Manager only
 - XcodeGen for project generation
-- Supabase Swift as the third-party application dependency
+- Supabase Swift and the official Spotify iOS SDK as pinned SPM dependencies
 - Apple system frameworks for authentication, playback, storage, and UI
 
 Do not introduce CocoaPods, React Native, Expo, checked-in secrets, or a second
@@ -111,8 +111,11 @@ services without merging unrelated editions.
 Playback starts through the provider that owns the selected track:
 
 - Apple Music uses `ApplicationMusicPlayer`.
-- Spotify uses Spotify Connect when a usable device exists and falls back to an
-  honest open-in-Spotify path when the API cannot start playback.
+- Spotify uses Spotify Connect when a usable device exists. `SpotifyAppRemote`
+  uses the official SDK to wake the phone player, play the requested URI, and
+  return to Heartable when no device is active. A brief app switch is required;
+  never promise invisible cold starts. The SDK token stays in memory, must match
+  the account-bound Spotify user, and never replaces Web API credentials.
 - Providers with legal direct streams use `LocalAudioEngine`.
 - A stats-only provider never presents playback controls.
 
@@ -120,6 +123,16 @@ Playback starts through the provider that owns the selected track:
 polling loops in views. Cancel stale starts, activate audio lazily, preserve the
 queue and cached playlist data across navigation, and surface actionable errors
 without immediately dismissing the player.
+
+`PlaybackQueue` identifies occurrences, not just URIs. Shuffle must install the
+whole selected queue, not merely choose a random first song. Queue ordering is
+owned by Heartable; disable inherited native shuffle/repeat when installing it.
+Preserve position and pause state when changing modes. Do not briefly start a
+paused Spotify song just to update its queue: defer installation until Play.
+Native queues contain one provider at a time; mixed-provider boundaries require
+an active Heartable session. `AppleMusicQueue` resolves its first song immediately
+and batches the remaining native entries, guarded by a cancellation generation.
+Never use a MusicKit queue-entry ID as a provider song ID.
 
 ## Library and cache rules
 
@@ -153,6 +166,10 @@ predecessor and exposes added/removed song occurrences with collection context.
 Capture playlist images, track album-art URLs, and durations in the existing
 snapshot columns. CSV export/import must preserve optional artwork metadata and
 provider-native URIs. Never replace historical track content with today's library.
+Use stable source playlist IDs for comparisons with a legacy-name fallback.
+Every snapshot page must load successfully before diffing; partial reads are
+errors, not removals. Exclude and visibly name services not present in both
+snapshots, since absence cannot prove deletion from that service.
 
 ## Listening stats
 
@@ -203,6 +220,11 @@ Photo Library, Camera, and Files.
   Use `HeartableDrawer` for content-fitted menus and confirmations, and
   `heartableSheetChrome` for theme coverage. Single selections close the menu;
   editable forms retain their Save action. Full player/lyrics keep matched controls.
+- iPhone drawers need explicit content-height detents, not only
+  `presentationSizing(.fitted)`. Measure intrinsic content, let iOS clamp to the
+  available height, and retain scrolling for large menus/accessibility text.
+  `HeartableReorderSheet` provides native reorder actions without full-screen
+  empty space for short lists. Keep the drawer layout regression tests.
 - Use a single centered confirmation component for destructive or account actions.
 - Every icon-only control needs an accessibility label and a minimum 44-point
   hit target.

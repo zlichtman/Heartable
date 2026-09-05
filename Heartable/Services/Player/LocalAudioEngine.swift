@@ -61,7 +61,9 @@ final class LocalAudioEngine {
     private var active: AVPlayer { activeIsA ? playerA : playerB }
     private var idle: AVPlayer { activeIsA ? playerB : playerA }
 
-    private var timeObserver: Any?
+    private var timeObservers: [Any] = []
+    private var completionObserver: NSObjectProtocol?
+    var onCompletion: (@MainActor (String) -> Void)?
     /// In-flight crossfade ramp; cancelled if the user acts mid-fade.
     private var fadeTask: Task<Void, Never>?
     /// A first play waits for background audio-session activation. Keeping the
@@ -71,21 +73,34 @@ final class LocalAudioEngine {
 
     private init() {
         let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
-        // Observe the time on whichever player is active by re-resolving inside
-        // the callback. We attach the observer to playerA but read `active`.
-        timeObserver = playerA.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
-            // The callback fires on the main queue, but it's a non-isolated Sendable
-            // closure, so hop onto the MainActor to mutate the @Observable state.
+        // Both players need observers: after a crossfade, the idle player's
+        // clock stops and can no longer drive progress for the active player.
+        for (index, player) in [playerA, playerB].enumerated() {
+            let observer = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self, self.activeIsA == (index == 0) else { return }
+                    let seconds = self.active.currentTime().seconds
+                    self.positionMs = seconds.isFinite ? Int(max(0, seconds) * 1000) : 0
+                    self.isPlaying = self.active.timeControlStatus == .playing
+                }
+            }
+            timeObservers.append(observer)
+        }
+        completionObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime, object: nil, queue: .main
+        ) { [weak self] notification in
+            let finishedItemID = (notification.object as? AVPlayerItem).map(ObjectIdentifier.init)
             MainActor.assumeIsolated {
-                guard let self else { return }
-                let p = self.active
-                self.positionMs = Int(p.currentTime().seconds * 1000)
-                self.isPlaying = p.timeControlStatus == .playing
+                guard let self, let item = self.active.currentItem,
+                      ObjectIdentifier(item) == finishedItemID, let track = self.nowPlaying else { return }
+                self.isPlaying = false
+                self.onCompletion?(track.uri)
             }
         }
     }
 
     func play(_ meta: NowPlaying, url: URL) {
+        guard !Task.isCancelled else { return }
         pendingPlayTask?.cancel()
         pendingPlayTask = Task { [weak self, audioSession] in
             _ = await audioSession.activate()

@@ -10,6 +10,8 @@ import UIKit
 struct MixtapeEditorView: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(PlayerStore.self) private var player
+    @Environment(PlaybackPrefsStore.self) private var prefs
+    @Environment(BannerCenter.self) private var banners
     @Environment(\.dismiss) private var dismiss
 
     let mixtapeID: UUID
@@ -194,11 +196,13 @@ struct MixtapeEditorView: View {
     private func saveMeta() async {
         guard editable else { return }
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        try? await BackendAPI.shared.updateMixtape(
-            id: mixtapeID,
-            title: t.isEmpty ? "Untitled mixtape" : t,
-            description: description
-        )
+        do {
+            try await BackendAPI.shared.updateMixtape(
+                id: mixtapeID,
+                title: t.isEmpty ? "Untitled mixtape" : t,
+                description: description
+            )
+        } catch { banners.error("Couldn’t save the mixtape details. Try again.") }
     }
 
     private func uploadCover(_ item: PhotosPickerItem) async {
@@ -214,15 +218,16 @@ struct MixtapeEditorView: View {
             // AsyncImage re-renders without a full reload.
             mixtape?.coverUrl = url
         } catch {
-            // NOTE: degrade gracefully — the editor has no error banner, so a
-            // failed cover upload is swallowed (cover simply stays unchanged).
+            banners.error("Couldn’t save the mixtape cover. Try again.")
         }
     }
 
     @ViewBuilder
     private func trackRow(_ t: MixtapeTrackDTO) -> some View {
         UnifiedTrackRow(track: unified(t)) {
-            Task { await player.play(unified(t)) }
+            Task { await player.play(tracks: tracks.map(unified),
+                                     startingAt: tracks.firstIndex { $0.id == t.id },
+                                     mode: prefs.mode, weights: prefs.weights) }
         }
         .listRowBackground(theme.palette.bg)
         .listRowSeparatorTint(theme.palette.border)

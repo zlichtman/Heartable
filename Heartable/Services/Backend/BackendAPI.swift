@@ -1133,35 +1133,53 @@ struct BackendAPI: Sendable {
     }
 
     func fetchSnapshotPlaylists(snapshotID: UUID) async -> [SnapshotPlaylistDTO] {
-        let rows: [SnapshotPlaylistDTO] = (try? await client
-            .from("snapshot_playlists")
-            .select("id, spotify_playlist_id, name, description, image_url, owner_name, track_count")
-            .eq("snapshot_id", value: snapshotID.uuidString)
-            .execute()
-            .value) ?? []
-        return rows
+        (try? await requireSnapshotPlaylists(snapshotID: snapshotID)) ?? []
     }
 
     func fetchSnapshotTracks(snapshotPlaylistID: UUID) async -> [SnapshotTrackDTO] {
-        let rows: [SnapshotTrackDTO] = (try? await client
-            .from("snapshot_tracks")
-            .select("spotify_track_uri, track_name, artist_name, album_name, album_art_url, duration_ms, position")
-            .eq("snapshot_playlist_id", value: snapshotPlaylistID.uuidString)
-            .order("position", ascending: true)
-            .execute()
-            .value) ?? []
-        return rows
+        (try? await requireSnapshotTracks(snapshotPlaylistID: snapshotPlaylistID)) ?? []
     }
 
     func fetchSnapshotLikedTracks(snapshotID: UUID) async -> [SnapshotLikedTrackDTO] {
-        let rows: [SnapshotLikedTrackDTO] = (try? await client
-            .from("snapshot_liked_tracks")
-            .select("spotify_track_uri, track_name, artist_name, album_name, album_art_url, duration_ms, added_at, position")
-            .eq("snapshot_id", value: snapshotID.uuidString)
-            .order("position", ascending: true)
-            .execute()
-            .value) ?? []
-        return rows
+        (try? await requireSnapshotLikedTracks(snapshotID: snapshotID)) ?? []
+    }
+
+    func requireSnapshotPlaylists(snapshotID: UUID) async throws -> [SnapshotPlaylistDTO] {
+        try await snapshotRows(table: "snapshot_playlists",
+            columns: "id, spotify_playlist_id, name, description, image_url, owner_name, track_count",
+            key: "snapshot_id", id: snapshotID)
+    }
+
+    func requireSnapshotTracks(snapshotPlaylistID: UUID) async throws -> [SnapshotTrackDTO] {
+        try await snapshotRows(table: "snapshot_tracks",
+            columns: "spotify_track_uri, track_name, artist_name, album_name, album_art_url, duration_ms, position",
+            key: "snapshot_playlist_id", id: snapshotPlaylistID, order: "position")
+    }
+
+    func requireSnapshotLikedTracks(snapshotID: UUID) async throws -> [SnapshotLikedTrackDTO] {
+        try await snapshotRows(table: "snapshot_liked_tracks",
+            columns: "spotify_track_uri, track_name, artist_name, album_name, album_art_url, duration_ms, added_at, position",
+            key: "snapshot_id", id: snapshotID, order: "position")
+    }
+
+    /// Every page must succeed before returning an inventory. A failed or
+    /// truncated read must never be interpreted as songs being removed.
+    private func snapshotRows<T: Decodable & Sendable>(
+        table: String, columns: String, key: String, id: UUID, order: String = "id"
+    ) async throws -> [T] {
+        var rows: [T] = []
+        let pageSize = 500
+        while true {
+            try Task.checkCancellation()
+            let page: [T] = try await client.from(table).select(columns)
+                .eq(key, value: id.uuidString)
+                .order(order, ascending: true)
+                .order("id", ascending: true)
+                .range(from: rows.count, to: rows.count + pageSize - 1)
+                .execute().value
+            rows.append(contentsOf: page)
+            if page.count < pageSize { return rows }
+        }
     }
 
     /// Body for the `snapshot-library` edge function.

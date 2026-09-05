@@ -41,6 +41,16 @@ Test on a physical iPhone using the exact processed TestFlight binary:
       subscribed physical device.
 - [ ] Spotify has `heartable://callback` registered exactly; connect, token
       refresh, device selection, cold-start playback, and reconnect work.
+- [ ] The same Spotify developer app has iOS SDK enabled and bundle ID
+      `com.zlichtman.heartable`. A no-player start plays the tapped song after the
+      SDK handoff; cancellation, missing Spotify, and mismatched accounts fail
+      clearly without substituting another provider.
+- [ ] Order, shuffle, and weighted playback queue every occurrence; next/previous
+      work across playlist, artist, Heartables, and mixtape entry points. Mode
+      changes keep the current position, and paused mode changes stay silent.
+- [ ] Spotify device transfer preserves playing/paused state. Same-service queues
+      continue while backgrounded; cross-provider boundaries are tested with the
+      app active and documented without an unsupported background guarantee.
 - [ ] Plex and Jellyfin local-network prompts are contextual and both HTTP LAN
       and HTTPS server paths have been tested.
 - [ ] Unsupported provider capabilities never present active controls.

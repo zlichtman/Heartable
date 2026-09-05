@@ -101,6 +101,7 @@ struct HeartableApp: App {
                 .environment(friendActivity)
                 .environment(weeklyRecap)
                 .onOpenURL {
+                    SpotifyAppRemote.shared.handle($0)
                     friendLinks.handle($0)
                     widgetLinks.handle($0)
                 }

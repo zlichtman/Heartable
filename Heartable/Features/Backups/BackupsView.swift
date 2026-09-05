@@ -955,10 +955,18 @@ struct BackupInventoryItem: Identifiable, Equatable, Sendable {
     let artworkURL: String?
     let collection: String
     let position: Int
+    var collectionID: String? = nil
 
     var id: String { "\(comparisonKey)#\(position)" }
 
     var comparisonKey: String {
+        if let collectionID, !collectionID.isEmpty {
+            return "\(uri)|id:\(collectionID)"
+        }
+        return legacyComparisonKey
+    }
+
+    var legacyComparisonKey: String {
         let normalizedCollection = collection
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
@@ -977,52 +985,72 @@ struct BackupSnapshotDifference: Equatable, Sendable {
 
 enum BackupSnapshotDiffer {
     /// Multiset comparison preserves duplicate occurrences while matching on the
-    /// stable provider URI plus collection name, rather than snapshot-local row IDs.
+    /// stable provider URI plus collection ID, falling back to legacy names.
     static func difference(
         current: [BackupInventoryItem],
         previous: [BackupInventoryItem]
     ) -> BackupSnapshotDifference {
-        var unmatchedPrevious = Dictionary(
-            grouping: previous,
-            by: \.comparisonKey
-        ).mapValues(\.count)
-        var added: [BackupInventoryItem] = []
-        for item in current {
-            if let count = unmatchedPrevious[item.comparisonKey], count > 0 {
-                unmatchedPrevious[item.comparisonKey] = count - 1
-            } else {
-                added.append(item)
+        var buckets = Dictionary(grouping: previous.indices, by: { previous[$0].comparisonKey })
+            .mapValues { Array($0.reversed()) }
+        var matchedCurrent = Set<Int>()
+        var matchedPrevious = Set<Int>()
+        for index in current.indices {
+            if let match = buckets[current[index].comparisonKey]?.popLast() {
+                matchedCurrent.insert(index)
+                matchedPrevious.insert(match)
             }
         }
+        // Before build 46 snapshots omitted provider playlist IDs. Match those
+        // legacy rows by name, but never merge two known, distinct playlists.
+        var legacy = Dictionary(grouping: previous.indices.filter { !matchedPrevious.contains($0) },
+                                by: { previous[$0].legacyComparisonKey })
+        for index in current.indices where !matchedCurrent.contains(index) {
+            let item = current[index]
+            guard let candidates = legacy[item.legacyComparisonKey],
+                  let offset = candidates.firstIndex(where: {
+                      item.collectionID == nil || previous[$0].collectionID == nil
+                  }) else { continue }
+            let match = candidates[offset]
+            legacy[item.legacyComparisonKey]?.remove(at: offset)
+            matchedCurrent.insert(index)
+            matchedPrevious.insert(match)
+        }
+        return BackupSnapshotDifference(
+            added: current.indices.filter { !matchedCurrent.contains($0) }.map { current[$0] },
+            removed: previous.indices.filter { !matchedPrevious.contains($0) }.map { previous[$0] }
+        )
+    }
+}
 
-        var unmatchedCurrent = Dictionary(
-            grouping: current,
-            by: \.comparisonKey
-        ).mapValues(\.count)
-        var removed: [BackupInventoryItem] = []
-        for item in previous {
-            if let count = unmatchedCurrent[item.comparisonKey], count > 0 {
-                unmatchedCurrent[item.comparisonKey] = count - 1
-            } else {
-                removed.append(item)
-            }
-        }
-        return BackupSnapshotDifference(added: added, removed: removed)
+struct BackupComparisonScope {
+    let sharedProviders: Set<ProviderID>
+    let excludedProviders: Set<ProviderID>
+
+    init(current: [BackupInventoryItem], previous: [BackupInventoryItem]) {
+        let currentProviders = Set(current.compactMap(\.providerID))
+        let previousProviders = Set(previous.compactMap(\.providerID))
+        sharedProviders = currentProviders.intersection(previousProviders)
+        excludedProviders = currentProviders.symmetricDifference(previousProviders)
+    }
+
+    func includes(_ item: BackupInventoryItem) -> Bool {
+        guard let provider = item.providerID else { return false }
+        return sharedProviders.contains(provider)
     }
 }
 
 private enum BackupInventoryLoader {
-    static func load(snapshotID: UUID) async -> [BackupInventoryItem] {
-        async let playlistsFetch = BackendAPI.shared.fetchSnapshotPlaylists(snapshotID: snapshotID)
-        async let likedFetch = BackendAPI.shared.fetchSnapshotLikedTracks(snapshotID: snapshotID)
+    static func load(snapshotID: UUID) async throws -> [BackupInventoryItem] {
+        async let playlistsFetch = BackendAPI.shared.requireSnapshotPlaylists(snapshotID: snapshotID)
+        async let likedFetch = BackendAPI.shared.requireSnapshotLikedTracks(snapshotID: snapshotID)
 
-        let playlists = await playlistsFetch
-        let playlistRows = await loadPlaylists(playlists, maxConcurrent: 6)
+        let playlists = try await playlistsFetch
+        let playlistRows = try await loadPlaylists(playlists, maxConcurrent: 6)
         var inventory = playlistRows
             .sorted { $0.index < $1.index }
             .flatMap(\.tracks)
 
-        let liked = await likedFetch
+        let liked = try await likedFetch
         inventory.append(contentsOf: liked.enumerated().map { offset, track in
             BackupInventoryItem(
                 uri: track.spotifyTrackUri,
@@ -1031,7 +1059,8 @@ private enum BackupInventoryLoader {
                 album: track.albumName,
                 artworkURL: track.albumArtUrl,
                 collection: "Liked Songs",
-                position: track.position ?? offset
+                position: track.position ?? offset,
+                collectionID: "liked"
             )
         })
         return inventory
@@ -1040,8 +1069,8 @@ private enum BackupInventoryLoader {
     private static func loadPlaylists(
         _ playlists: [SnapshotPlaylistDTO],
         maxConcurrent: Int
-    ) async -> [(index: Int, tracks: [BackupInventoryItem])] {
-        await withTaskGroup(of: (Int, [BackupInventoryItem]).self) { group in
+    ) async throws -> [(index: Int, tracks: [BackupInventoryItem])] {
+        try await withThrowingTaskGroup(of: (Int, [BackupInventoryItem]).self) { group in
             var results: [(index: Int, tracks: [BackupInventoryItem])] = []
             var nextIndex = 0
 
@@ -1051,7 +1080,7 @@ private enum BackupInventoryLoader {
                     ? playlist.name!
                     : "Untitled playlist"
                 group.addTask {
-                    let tracks = await BackendAPI.shared.fetchSnapshotTracks(
+                    let tracks = try await BackendAPI.shared.requireSnapshotTracks(
                         snapshotPlaylistID: playlist.id
                     )
                     return (index, tracks.enumerated().map { offset, track in
@@ -1062,7 +1091,8 @@ private enum BackupInventoryLoader {
                             album: track.albumName,
                             artworkURL: track.albumArtUrl,
                             collection: collection,
-                            position: track.position ?? offset
+                            position: track.position ?? offset,
+                            collectionID: playlist.spotifyPlaylistId.flatMap { $0.isEmpty ? nil : $0 }
                         )
                     })
                 }
@@ -1072,7 +1102,7 @@ private enum BackupInventoryLoader {
                 enqueue(nextIndex)
                 nextIndex += 1
             }
-            for await result in group {
+            for try await result in group {
                 results.append((index: result.0, tracks: result.1))
                 if nextIndex < playlists.count {
                     enqueue(nextIndex)
@@ -1093,6 +1123,8 @@ private struct BackupChangesView: View {
     @State private var difference = BackupSnapshotDifference(added: [], removed: [])
     @State private var loading = true
     @State private var failed = false
+    @State private var excludedProviders: [ProviderID] = []
+    @State private var hasSharedServices = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1101,6 +1133,12 @@ private struct BackupChangesView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 16) {
                     comparisonSummary
+                    if !excludedProviders.isEmpty, !loading, !failed {
+                        Text(excludedServiceMessage)
+                            .font(Typography.body(13))
+                            .foregroundStyle(theme.palette.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
 
                     if selection.previous == nil {
                         firstBackupState
@@ -1112,12 +1150,16 @@ private struct BackupChangesView: View {
                     } else if failed {
                         messageState(
                             icon: "exclamationmark.arrow.triangle.2.circlepath",
-                            text: "Couldn’t load this comparison. Pull back and try again."
+                            text: "Couldn’t load the complete comparison."
                         )
+                        Button("Try again") { Task { await loadDifference() } }
+                            .font(Typography.semibold(14))
+                            .foregroundStyle(theme.palette.rose)
+                            .frame(maxWidth: .infinity, minHeight: 44)
                     } else if difference.added.isEmpty, difference.removed.isEmpty {
                         messageState(
                             icon: "checkmark.circle.fill",
-                            text: "No songs were added or removed."
+                            text: hasSharedServices ? "No songs were added or removed in the compared services." : "No shared services to compare."
                         )
                     } else {
                         changeSection(
@@ -1138,6 +1180,7 @@ private struct BackupChangesView: View {
                 .padding(.bottom, 36)
             }
             .scrollIndicators(.hidden)
+            .refreshable { await loadDifference() }
         }
         .background(theme.palette.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
@@ -1206,6 +1249,12 @@ private struct BackupChangesView: View {
         return "Compared with \(previous.name)"
     }
 
+    private var excludedServiceMessage: String {
+        let names = excludedProviders.map { ProviderCatalog.entry($0)?.label ?? $0.rawValue }
+            .joined(separator: ", ")
+        return "Not compared: \(names). These services don’t appear in both saved backups."
+    }
+
     private var firstBackupState: some View {
         messageState(
             icon: "sparkles",
@@ -1264,8 +1313,8 @@ private struct BackupChangesView: View {
                 .foregroundStyle(tint)
 
                 VStack(spacing: 0) {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                        changeRow(item)
+                    ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                        changeRow(item, action: title == "Added" ? "Added to" : "Removed from")
                         if index < items.count - 1 {
                             Divider()
                                 .overlay(theme.palette.border)
@@ -1283,7 +1332,7 @@ private struct BackupChangesView: View {
         }
     }
 
-    private func changeRow(_ item: BackupInventoryItem) -> some View {
+    private func changeRow(_ item: BackupInventoryItem, action: String) -> some View {
         HStack(spacing: 10) {
             CoverArt(
                 url: item.artworkURL.flatMap(URL.init(string:)),
@@ -1296,10 +1345,19 @@ private struct BackupChangesView: View {
                     .font(Typography.medium(13))
                     .foregroundStyle(theme.palette.text)
                     .lineLimit(1)
-                Text(changeDetail(item))
+                Text(item.artist?.isEmpty == false ? item.artist! : "Unknown artist")
                     .font(Typography.body(11))
                     .foregroundStyle(theme.palette.textMuted)
                     .lineLimit(1)
+                Text("\(action) \(item.collection)")
+                    .font(Typography.medium(12))
+                    .foregroundStyle(theme.palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let provider = item.providerID {
+                    Text(ProviderCatalog.entry(provider)?.label ?? provider.rawValue)
+                        .font(Typography.body(11))
+                        .foregroundStyle(theme.palette.textMuted)
+                }
             }
 
             Spacer(minLength: 4)
@@ -1309,12 +1367,8 @@ private struct BackupChangesView: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 62)
+        .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
-    }
-
-    private func changeDetail(_ item: BackupInventoryItem) -> String {
-        let artist = item.artist?.isEmpty == false ? item.artist! : "Unknown artist"
-        return "\(artist) · \(item.collection)"
     }
 
     private func loadDifference() async {
@@ -1325,15 +1379,24 @@ private struct BackupChangesView: View {
 
         loading = true
         failed = false
-        async let currentLoad = BackupInventoryLoader.load(snapshotID: selection.current.id)
-        async let previousLoad = BackupInventoryLoader.load(snapshotID: previous.id)
-        let (current, prior) = await (currentLoad, previousLoad)
-
-        if (selection.current.expectedTrackCount > 0 && current.isEmpty)
-            || (previous.expectedTrackCount > 0 && prior.isEmpty) {
+        do {
+            async let currentLoad = BackupInventoryLoader.load(snapshotID: selection.current.id)
+            async let previousLoad = BackupInventoryLoader.load(snapshotID: previous.id)
+            let (current, prior) = try await (currentLoad, previousLoad)
+            guard current.count == selection.current.expectedTrackCount,
+                  prior.count == previous.expectedTrackCount else {
+                failed = true
+                loading = false
+                return
+            }
+            let scope = BackupComparisonScope(current: current, previous: prior)
+            excludedProviders = scope.excludedProviders.sorted { $0.rawValue < $1.rawValue }
+            hasSharedServices = !scope.sharedProviders.isEmpty
+            difference = BackupSnapshotDiffer.difference(
+                current: current.filter(scope.includes), previous: prior.filter(scope.includes)
+            )
+        } catch {
             failed = true
-        } else {
-            difference = BackupSnapshotDiffer.difference(current: current, previous: prior)
         }
         loading = false
     }
@@ -1427,6 +1490,7 @@ private struct BackupContentsView: View {
 
     @State private var tracks: [BackupTrackPreview] = []
     @State private var loading = true
+    @State private var failed = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1442,6 +1506,18 @@ private struct BackupContentsView: View {
                             .tint(theme.palette.rose)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 44)
+                    } else if failed {
+                        VStack(spacing: 10) {
+                            Text("Couldn’t load all saved tracks.")
+                                .font(Typography.body(13))
+                                .foregroundStyle(theme.palette.textSecondary)
+                            Button("Try again") { Task { await loadTracks() } }
+                                .font(Typography.semibold(14))
+                                .foregroundStyle(theme.palette.rose)
+                                .frame(minHeight: 44)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 32)
                     } else if tracks.isEmpty {
                         emptyState
                     } else {
@@ -1474,6 +1550,7 @@ private struct BackupContentsView: View {
         .background(theme.palette.bg.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .task(id: selection.id) { await loadTracks() }
+        .refreshable { await loadTracks() }
     }
 
     private var header: some View {
@@ -1605,17 +1682,23 @@ private struct BackupContentsView: View {
 
     private func loadTracks() async {
         loading = true
+        failed = false
         defer { loading = false }
 
-        switch selection {
-        case .playlist(let id, _, _, _):
-            tracks = await BackendAPI.shared.fetchSnapshotTracks(snapshotPlaylistID: id)
-                .enumerated()
-                .map { BackupTrackPreview($0.element, fallbackPosition: $0.offset) }
-        case .likedSongs(let snapshotID, _, _):
-            tracks = await BackendAPI.shared.fetchSnapshotLikedTracks(snapshotID: snapshotID)
-                .enumerated()
-                .map { BackupTrackPreview($0.element, fallbackPosition: $0.offset) }
+        do {
+            let loaded: [BackupTrackPreview]
+            switch selection {
+            case .playlist(let id, _, _, _):
+                loaded = try await BackendAPI.shared.requireSnapshotTracks(snapshotPlaylistID: id)
+                    .enumerated().map { BackupTrackPreview($0.element, fallbackPosition: $0.offset) }
+            case .likedSongs(let snapshotID, _, _):
+                loaded = try await BackendAPI.shared.requireSnapshotLikedTracks(snapshotID: snapshotID)
+                    .enumerated().map { BackupTrackPreview($0.element, fallbackPosition: $0.offset) }
+            }
+            guard loaded.count == selection.expectedCount else { failed = true; return }
+            tracks = loaded
+        } catch {
+            failed = true
         }
     }
 }

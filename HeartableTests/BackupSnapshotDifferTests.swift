@@ -44,7 +44,8 @@ final class BackupSnapshotDifferTests: XCTestCase {
     private func item(
         uri: String,
         collection: String,
-        position: Int = 0
+        position: Int = 0,
+        collectionID: String? = nil
     ) -> BackupInventoryItem {
         BackupInventoryItem(
             uri: uri,
@@ -53,7 +54,51 @@ final class BackupSnapshotDifferTests: XCTestCase {
             album: "Album",
             artworkURL: nil,
             collection: collection,
-            position: position
+            position: position,
+            collectionID: collectionID
         )
+    }
+
+    func testRenamingKnownPlaylistDoesNotCreateFalseTrackChanges() {
+        let previous = item(uri: "spotify:track:one", collection: "Old name", collectionID: "playlist1")
+        let current = item(uri: previous.uri, collection: "New name", collectionID: "playlist1")
+        let diff = BackupSnapshotDiffer.difference(current: [current], previous: [previous])
+        XCTAssertTrue(diff.added.isEmpty)
+        XCTAssertTrue(diff.removed.isEmpty)
+    }
+
+    func testDistinctPlaylistsWithSameNameDoNotMerge() {
+        let previous = item(uri: "spotify:track:one", collection: "Favorites", collectionID: "playlist1")
+        let current = item(uri: previous.uri, collection: "Favorites", collectionID: "playlist2")
+        let diff = BackupSnapshotDiffer.difference(current: [current], previous: [previous])
+        XCTAssertEqual(diff.added, [current])
+        XCTAssertEqual(diff.removed, [previous])
+    }
+
+    func testLegacySnapshotMatchesNewPlaylistIDsWithoutFalseChanges() {
+        let legacy = item(uri: "apple:song:one", collection: "Road Trip")
+        let current = item(uri: legacy.uri, collection: "Road Trip", collectionID: "newly-saved-id")
+        let diff = BackupSnapshotDiffer.difference(current: [current], previous: [legacy])
+        XCTAssertTrue(diff.added.isEmpty)
+        XCTAssertTrue(diff.removed.isEmpty)
+    }
+
+    func testMissingServiceIsNotReportedAsMassDeletion() {
+        let spotify = item(uri: "spotify:track:one", collection: "Road Trip")
+        let apple = item(uri: "apple:song:one", collection: "Road Trip")
+        let scope = BackupComparisonScope(current: [spotify], previous: [spotify, apple])
+        XCTAssertEqual(scope.sharedProviders, [.spotify])
+        XCTAssertEqual(scope.excludedProviders, [.apple])
+        let diff = BackupSnapshotDiffer.difference(current: [spotify].filter(scope.includes),
+                                                  previous: [spotify, apple].filter(scope.includes))
+        XCTAssertTrue(diff.removed.isEmpty)
+    }
+
+    func testSamePlaylistNamesAcrossServicesKeepTheirProviderIdentity() {
+        let spotify = item(uri: "spotify:track:one", collection: "Favorites", collectionID: "1")
+        let apple = item(uri: "apple:song:one", collection: "Favorites", collectionID: "1")
+        XCTAssertNotEqual(spotify.comparisonKey, apple.comparisonKey)
+        XCTAssertEqual(spotify.providerID, .spotify)
+        XCTAssertEqual(apple.providerID, .apple)
     }
 }

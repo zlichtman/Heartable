@@ -75,6 +75,7 @@ struct AppTabView: View {
         // cancels PlayerStore's own adaptive polling loop.
         .task(id: scenePhase) {
             let isActive = scenePhase == .active
+            SpotifyAppRemote.shared.setActive(isActive)
             if isActive {
                 // iOS may suspend the exact-expiry task in the background.
                 // Reconcile before playback polling can qualify another listen.
@@ -102,6 +103,9 @@ struct AppTabView: View {
                     ghost: prefs.ghostMode
                 )
             }
+        }
+        .onChange(of: prefs.mode) {
+            Task { await player.applyPlaybackMode(prefs.mode, weights: prefs.weights) }
         }
         // Skip rules only need reevaluation when the track changes, not on a
         // permanent two-second timer.

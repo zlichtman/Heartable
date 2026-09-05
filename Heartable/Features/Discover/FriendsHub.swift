@@ -560,6 +560,10 @@ private struct FindTab: View {
     }
 
     private var inviteSheet: some View {
+        HeartableDrawer { inviteContent }
+    }
+
+    private var inviteContent: some View {
         VStack(spacing: 20) {
             Text("Invite a friend").font(Typography.heading(22)).foregroundStyle(theme.palette.text).padding(.top, 24)
             if let qr = Self.qr(from: inviteLink) {
@@ -570,9 +574,6 @@ private struct FindTab: View {
                 Text(code.uppercased())
                     .font(Typography.semibold(22)).tracking(3).foregroundStyle(theme.palette.rose)
             }
-            Text("Have them scan this in Heartable, or share the code.")
-                .font(Typography.body(13)).foregroundStyle(theme.palette.textSecondary)
-                .multilineTextAlignment(.center).padding(.horizontal, 30)
             ShareLink(item: "Add me on Heartable. My invite code is \(inviteCode?.uppercased() ?? "")  \(inviteLink)") {
                 Text("Share invite").font(Typography.semibold(15)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity).padding(.vertical, 14)
@@ -583,8 +584,6 @@ private struct FindTab: View {
         .frame(maxWidth: .infinity)
         .padding(.bottom, 24)
         .background(theme.palette.bg.ignoresSafeArea())
-        .presentationSizing(.fitted)
-        .heartableSheetChrome()
     }
 
     private func incomingRow(_ req: FriendDTO) -> some View {

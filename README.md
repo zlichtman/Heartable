@@ -28,7 +28,7 @@ name.
 ## Current release
 
 - Marketing version: **1.0.0**
-- Build: **46**
+- Build: **47**
 - Minimum OS: **iOS 26**
 - Toolchain: **Swift 6**, SwiftUI, XcodeGen, Swift Package Manager
 - Backend: **Supabase**
@@ -67,6 +67,22 @@ Build 46 adds landscape song-cover browsing inside playlists, compact themed
 option drawers, shared root-page headers, and backup artwork preservation
 (including CSV round trips). Existing backups without saved artwork retain
 placeholders; new captures preserve the provider's cover URLs.
+
+Build 47 gives iPhone option drawers explicit content-sized detents, including
+short reorder menus, with scrollable overflow and full theme coverage. Backup
+changes identify the source playlist and service, preserve duplicate occurrences,
+and use stable playlist IDs so renames do not look like song removals. Comparisons
+require complete paginated reads; services missing from either backup are excluded
+and named rather than presented as mass deletions.
+
+Playback now owns an occurrence-aware queue. Playlist, artist, Heartables, and
+mixtape selections send their actual ordered/shuffled/weighted queue to the player.
+Apple Music queues retain native song IDs and load the remaining songs in batches.
+Spotify uses its official iOS SDK to wake the phone player when Connect has no
+device, then installs the Heartable queue. Spotify requires a brief app switch;
+it cannot be cold-started invisibly on iOS. Same-service native queues continue in
+the background; mixed-service boundaries require Heartable to be active. Provider
+subscription, installation, and API capability limits still apply.
 
 Home Screen widgets include Weekly Recap, Friends Listening, and Heartable
 Shortcuts. Weekly Recap also supports the rectangular Lock Screen slot;

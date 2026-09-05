@@ -53,6 +53,14 @@ Enable MusicKit for `com.zlichtman.heartable` under the App ID's **App Services*
 tab; current MusicKit for Swift does not add a code-signing entitlement.
 Use automatic signing.
 
+For Spotify's native cold-start handoff, the existing Spotify developer app must
+enable the **iOS SDK**, register bundle ID `com.zlichtman.heartable`, and retain
+redirect URI `heartable://callback`. Do not create another Spotify app or rotate
+the Web API credentials. Verify on a physical iPhone with Spotify installed:
+no active Connect player → tap a song → Spotify authorization/handoff → the
+requested song plays → return to Heartable. The SDK must reject an account that
+differs from the Spotify account paired with Heartable.
+
 Xcode-managed certificates are team-wide. Do not revoke a certificate merely
 because it was created by an older workflow; first prove that no unrelated app
 or active workflow uses it. Obsolete app-specific provisioning profiles may be

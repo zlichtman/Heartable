@@ -82,9 +82,7 @@ struct ThemeEditorView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }
-                        .font(Typography.semibold(16))
-                        .disabled(trimmedName.isEmpty)
+                    HeartableToolbarAction(title: "Save", isDisabled: trimmedName.isEmpty, action: save)
                 }
             }
         }

@@ -594,34 +594,18 @@ private struct CustomOrderSheet: View {
     let sortStore: LibrarySortStore
 
     var body: some View {
-        NavigationStack {
-            List {
-                ForEach(playlists) { pl in
-                    HStack(spacing: 12) {
-                        CoverArt(
-                            url: pl.image,
-                            size: 40,
-                            corner: 8,
-                            placeholder: "music.note.list"
-                        )
-                        Text(pl.name).font(Typography.semibold(15))
-                            .foregroundStyle(theme.palette.text).lineLimit(1)
-                    }
-                    .listRowBackground(theme.palette.card)
-                }
-                .onMove { from, to in
-                    playlists.move(fromOffsets: from, toOffset: to)
-                    sortStore.setCustomOrder(playlists.map(\.key))
-                }
+        HeartableReorderSheet(title: "Custom order", items: playlists, onMove: { from, to in
+            playlists.move(fromOffsets: from, toOffset: to)
+            sortStore.setCustomOrder(playlists.map(\.key))
+        }) { playlist in
+            HStack(spacing: 12) {
+                CoverArt(url: playlist.image, size: 40, corner: 8, placeholder: "music.note.list")
+                Text(playlist.name)
+                    .font(Typography.semibold(15))
+                    .foregroundStyle(theme.palette.text)
+                    .lineLimit(2)
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(theme.palette.bg.ignoresSafeArea())
-            .environment(\.editMode, .constant(.active))
-            .navigationTitle("Custom order")
-            .navigationBarTitleDisplayMode(.inline)
         }
-        .heartableSheetChrome()
     }
 }
 
@@ -635,31 +619,18 @@ private struct ProviderOrderSheet: View {
     let sortStore: LibrarySortStore
 
     var body: some View {
-        NavigationStack {
-            List {
-                Section("Priority") {
-                    ForEach(present) { id in
-                        HStack(spacing: 12) {
-                            ProviderBadge(id: id, size: 26)
-                            Text(label(id))
-                                .font(Typography.semibold(15)).foregroundStyle(theme.palette.text)
-                        }
-                        .listRowBackground(theme.palette.card)
-                    }
-                    .onMove { from, to in
-                        present.move(fromOffsets: from, toOffset: to)
-                        commit()
-                    }
-                }
+        HeartableReorderSheet(title: "Creator priority", items: present, onMove: { from, to in
+            present.move(fromOffsets: from, toOffset: to)
+            commit()
+        }) { id in
+            HStack(spacing: 12) {
+                ProviderBadge(id: id, size: 26)
+                Text(label(id))
+                    .font(Typography.semibold(15))
+                    .foregroundStyle(theme.palette.text)
+                    .lineLimit(2)
             }
-            .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .background(theme.palette.bg.ignoresSafeArea())
-            .environment(\.editMode, .constant(.active))
-            .navigationTitle("Creator priority")
-            .navigationBarTitleDisplayMode(.inline)
         }
-        .heartableSheetChrome()
     }
 
     private func label(_ id: ProviderID) -> String {

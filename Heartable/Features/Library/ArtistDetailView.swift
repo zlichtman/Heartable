@@ -8,6 +8,7 @@ import SwiftUI
 struct ArtistDetailView: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(PlayerStore.self) private var player
+    @Environment(PlaybackPrefsStore.self) private var prefs
 
     let artist: LibraryStore.ArtistAgg
     let store: LibraryStore
@@ -140,9 +141,10 @@ struct ArtistDetailView: View {
             .padding(.bottom, 4)
 
             LazyVStack(spacing: 0) {
-                ForEach(group.tracks) { track in
+                ForEach(Array(group.tracks.enumerated()), id: \.offset) { index, track in
                     UnifiedTrackRow(track: track) {
-                        Task { await player.play(track) }
+                        Task { await player.play(tracks: group.tracks, startingAt: index,
+                                                 mode: prefs.mode, weights: prefs.weights) }
                     }
                 }
             }

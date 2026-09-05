@@ -6,6 +6,7 @@ import SwiftUI
 struct LikedSongsView: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(PlayerStore.self) private var player
+    @Environment(PlaybackPrefsStore.self) private var prefs
     let store: LibraryStore
 
     private var tracks: [UnifiedTrack] { store.likedTracks }
@@ -22,9 +23,10 @@ struct LikedSongsView: View {
                         .padding(.top, 40)
                 } else {
                     LazyVStack(spacing: 0) {
-                        ForEach(tracks) { track in
+                        ForEach(Array(tracks.enumerated()), id: \.offset) { index, track in
                             UnifiedTrackRow(track: track) {
-                                Task { await player.play(track) }
+                                Task { await player.play(tracks: tracks, startingAt: index,
+                                                         mode: prefs.mode, weights: prefs.weights) }
                             }
                         }
                     }
@@ -58,9 +60,9 @@ struct LikedSongsView: View {
                     .foregroundStyle(theme.palette.textSecondary)
             }
             Spacer(minLength: 4)
-            if let first = tracks.first {
+            if !tracks.isEmpty {
                 Button {
-                    Task { await player.play(first) }
+                    Task { await player.play(tracks: tracks, mode: prefs.mode, weights: prefs.weights) }
                 } label: {
                     Image(systemName: "play.fill")
                         .font(.system(size: 18, weight: .bold))
@@ -70,6 +72,7 @@ struct LikedSongsView: View {
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Play Heartables")
             }
         }
     }

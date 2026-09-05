@@ -5,6 +5,7 @@ import SwiftUI
 struct PlaylistCoverBrowser: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(PlayerStore.self) private var player
+    @Environment(PlaybackPrefsStore.self) private var prefs
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let tracks: [UnifiedTrack]
@@ -20,7 +21,8 @@ struct PlaylistCoverBrowser: View {
                     ForEach(Array(tracks.enumerated()), id: \.offset) { index, track in
                         Button {
                             selection = index
-                            Task { await player.play(track) }
+                            Task { await player.play(tracks: tracks, startingAt: index,
+                                                     mode: prefs.mode, weights: prefs.weights) }
                         } label: {
                             VStack(spacing: 8) {
                                 CoverArt(url: track.albumArt, size: coverSize, corner: 18)

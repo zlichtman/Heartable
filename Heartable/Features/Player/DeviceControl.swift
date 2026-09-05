@@ -119,6 +119,25 @@ struct SpotifyDevicePickerSheet: View {
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
+                        if player.now?.source == .spotify,
+                           UIApplication.shared.canOpenURL(URL(string: "spotify:")!) {
+                            Button {
+                                Task {
+                                    busyID = "this-iphone"
+                                    let started = await player.startSpotifyOnThisIPhone()
+                                    busyID = nil
+                                    if started { dismiss() }
+                                }
+                            } label: {
+                                Label("Play on this iPhone", systemImage: "iphone")
+                                    .font(Typography.semibold(15))
+                                    .foregroundStyle(theme.palette.rose)
+                                    .frame(maxWidth: .infinity, minHeight: 50)
+                                    .background(theme.palette.card, in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(busyID != nil)
+                        }
                     } else {
                         ForEach(devices, id: \.id) { device in
                             deviceRow(device)
@@ -181,9 +200,9 @@ struct SpotifyDevicePickerSheet: View {
                 devices = available
             case .none:
                 devices = []
-                loadMessage =
-                    "Spotify has not exposed a Connect device yet. "
-                    + "Refresh when one becomes available."
+                loadMessage = UIApplication.shared.canOpenURL(URL(string: "spotify:")!)
+                    ? "Start on this iPhone or refresh to find a speaker or computer."
+                    : "Install Spotify on this iPhone, or refresh to find a speaker or computer."
             case .unavailable:
                 devices = []
                 loadMessage =
@@ -218,23 +237,20 @@ struct SpotifyDevicePickerSheet: View {
         guard let id = device.id,
               let token = await SpotifyAuth.getValidAccessToken() else { return }
         busyID = id
-        let transferred = await SpotifyAPI.transferPlayback(
-            token: token,
-            deviceId: id,
-            play: false
-        )
-        guard transferred else {
-            banners.error("Spotify couldn't switch to that device.")
-            busyID = nil
-            return
-        }
-        let startedPending = await player.startPendingSpotify(on: id)
-        if startedPending {
-            banners.success("Playback moved to \(device.name ?? "Spotify device")")
+        defer { busyID = nil }
+        if player.hasPendingSpotify {
+            guard await player.startPendingSpotify(on: id) else { return }
         } else {
-            banners.info("Connected to \(device.name ?? "Spotify device")")
+            let transferred = await SpotifyAPI.transferPlayback(
+                token: token, deviceId: id, play: player.now?.isPlaying == true
+            )
+            guard transferred else {
+                banners.error("Spotify couldn't switch to that device.")
+                return
+            }
+            await player.refresh()
         }
-        busyID = nil
+        banners.success("Connected to \(device.name ?? "Spotify device")")
         dismiss()
     }
 }

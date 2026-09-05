@@ -253,15 +253,18 @@ enum SpotifyAPI {
         token: String,
         uris: [String]? = nil,
         contextUri: String? = nil,
-        deviceId: String? = nil
+        deviceId: String? = nil,
+        positionMs: Int? = nil
     ) async throws {
         var body: [String: Any] = [:]
         if let uris { body["uris"] = uris }
         if let contextUri { body["context_uri"] = contextUri }
+        if let positionMs { body["position_ms"] = max(0, positionMs) }
         let bodyData = body.isEmpty ? nil : try? JSONSerialization.data(withJSONObject: body)
 
         var device = deviceId
         for attempt in 0..<4 {
+            try Task.checkCancellation()
             let query = device.map { "?device_id=\($0)" } ?? ""
             guard let url = URL(string: "\(base)/me/player/play\(query)") else {
                 throw ProviderError("Invalid Spotify playback URL.")
@@ -275,6 +278,7 @@ enum SpotifyAPI {
                     body: bodyData
                 )
             } catch {
+                try Task.checkCancellation()
                 throw ProviderError("Couldn't reach Spotify playback.")
             }
 
@@ -318,7 +322,7 @@ enum SpotifyAPI {
                         throw ProviderError("Spotify couldn't switch to that device.")
                     }
                 }
-                try? await Task.sleep(nanoseconds: UInt64(700_000_000 * (attempt + 1)))
+                try await Task.sleep(nanoseconds: UInt64(700_000_000 * (attempt + 1)))
                 continue
             }
 

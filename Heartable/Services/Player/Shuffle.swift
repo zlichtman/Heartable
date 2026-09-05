@@ -26,7 +26,7 @@ enum ShuffleMode: String, Sendable, CaseIterable {
         switch self {
         case .order: "Plays songs in their original order"
         case .shuffle: "Plays songs in a random order"
-        case .weighted: "Plays your boosted songs more often"
+        case .weighted: "Plays boosted songs earlier in the queue"
         }
     }
 
@@ -51,22 +51,12 @@ func orderForPlayback(_ uris: [String], mode: ShuffleMode, weights: [String: Int
     case .shuffle:
         return uris.shuffled()
     case .weighted:
-        var pool = uris
-        var result: [String] = []
-        result.reserveCapacity(pool.count)
-        while !pool.isEmpty {
-            let factors = pool.map { uri -> Double in
-                max(0.05, 1 + Double(weights[uri] ?? 0) / 10)
-            }
-            let total = factors.reduce(0, +)
-            var roll = Double.random(in: 0..<total)
-            var idx = 0
-            for (i, f) in factors.enumerated() {
-                roll -= f
-                if roll <= 0 { idx = i; break }
-            }
-            result.append(pool.remove(at: idx))
-        }
-        return result
+        // Exponential races implement weighted sampling without replacement in
+        // O(n log n), avoiding repeated whole-library scans on the main thread.
+        return uris.map { uri in
+            let factor = max(0.05, 1 + Double(weights[uri] ?? 0) / 10)
+            let priority = -log(Double.random(in: Double.leastNonzeroMagnitude..<1)) / factor
+            return (uri, priority)
+        }.sorted { $0.1 < $1.1 }.map(\.0)
     }
 }
