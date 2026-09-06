@@ -19,7 +19,6 @@ struct MusicServicesView: View {
                 providerSection(.library)
                 searchSources
                 if !ProviderCatalog.entries(in: .history).isEmpty { providerSection(.history) }
-                comingSoon
             }
             .padding(16)
         }
@@ -74,7 +73,7 @@ struct MusicServicesView: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionHeading("Search")
             HStack(spacing: 0) {
-                ForEach(ProviderCatalog.publicSearchIDs) { id in
+                ForEach(ProviderCatalog.publicSearchIDs.filter { $0 != .wsum }) { id in
                     ProviderLogo(id: id, size: 48)
                         .frame(maxWidth: .infinity)
                         .accessibilityLabel(ProviderCatalog.entry(id)?.label ?? id.rawValue)
@@ -85,23 +84,6 @@ struct MusicServicesView: View {
             .background(theme.palette.card, in: RoundedRectangle(cornerRadius: Theme.Radius.md))
             .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(theme.palette.border))
         }
-    }
-
-    private var comingSoon: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Coming soon", systemImage: "sparkles")
-                .font(Typography.semibold(15))
-                .foregroundStyle(theme.palette.text)
-            Text(ProviderCatalog.entries(in: .comingSoon).map(\.label).joined(separator: " · "))
-                .font(Typography.body(13))
-                .foregroundStyle(theme.palette.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(theme.palette.card, in: RoundedRectangle(cornerRadius: Theme.Radius.md))
-        .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(theme.palette.border))
-        .padding(.top, 10)
     }
 
     // MARK: - Capability key

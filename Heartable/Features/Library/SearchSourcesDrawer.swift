@@ -16,7 +16,13 @@ struct SearchSourcesDrawer: View {
                     ForEach(items) { item in
                         Button { onSelect(item) } label: {
                             HStack(spacing: 8) {
-                                if let id = item.providerID { ProviderLogo(id: id, size: 28) }
+                                if let id = item.providerID {
+                                    ProviderLogo(id: id, size: 28)
+                                } else {
+                                    Image(systemName: item.icon)
+                                        .foregroundStyle(theme.palette.rose)
+                                        .frame(width: 28, height: 28)
+                                }
                                 Text(item.title).font(Typography.semibold(13))
                                     .fixedSize(horizontal: false, vertical: true)
                                 Spacer(minLength: 0)

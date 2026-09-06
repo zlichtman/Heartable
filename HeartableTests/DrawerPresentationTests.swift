@@ -7,6 +7,39 @@ final class DrawerPresentationTests: XCTestCase {
     func testWarmSearchDrawer() async throws { try await render(themeKey: Themes.defaultKey) }
     func testDarkSearchDrawer() async throws { try await render(themeKey: "gruvbox-dark") }
 
+    func testSixSearchControlsInWarmTheme() async throws { try await renderFilters(themeKey: Themes.defaultKey) }
+    func testSixSearchControlsInDarkTheme() async throws { try await renderFilters(themeKey: "gruvbox-dark") }
+
+    private func renderFilters(themeKey: String) async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.keyWindow
+        let theme = ThemeStore()
+        let previousTheme = theme.currentKey
+        theme.setTheme(themeKey)
+        let session = LibrarySessionStore()
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = UIHostingController(rootView:
+            LibrarySearchResultsView(master: session.master, providerOrder: [.spotify, .apple],
+                                     connectedProviderIDs: [.spotify, .apple], localPlaylists: [])
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .background(theme.palette.bg)
+                .environment(theme).environment(session))
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            previous?.makeKey()
+            theme.setTheme(previousTheme)
+        }
+        try await Task.sleep(for: .milliseconds(300))
+        let screenshot = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+            window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let attachment = XCTAttachment(image: screenshot)
+        attachment.name = "Six-search-controls-\(themeKey)"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
     private func render(themeKey: String) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.keyWindow

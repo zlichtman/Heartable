@@ -131,8 +131,8 @@ Music providers are Apple Music, Spotify, Plex, and Jellyfin. Audius, Deezer
 they never become account pairings or contribute chart data to personal stats.
 Internet Archive, ListenBrainz, Mixcloud, and the general Radio Browser adapter
 have been removed.
-Search defaults to Heartable plus connected libraries. Its themed source drawer
-supports multiple selections, with public catalogs/radio opt-in and real service
+Search defaults to All: Heartable, connected libraries, and public catalogs/radio.
+Its themed Type drawer supports multiple selections and real service
 logos, including the installed Heartable icon.
 
 Spotify onboarding imports up to 50 provider-reported recent plays, once per
@@ -143,7 +143,21 @@ An existing Spotify connection needs reconnecting to grant the new recent-histor
 scope. Queue installation now verifies native Shuffle/Repeat state on the device
 that received Play instead of assuming accepted commands finished in order.
 
-### Build 54 (release preparation)
+### Build 55 (release preparation)
+
+Radio opens from the shortcut beside Library search, keeping Playlists/Artists
+and sorting on one row. Search uses six controls in two rows: Type, Songs,
+Playlists, Artists, Profiles, and Stations. All includes WSUM shows, while
+explicit app selections remain scoped. Stations are not listed as songs/artists.
+Unsupported provider profile searches explain the limitation and offer Heartable
+profile search instead of a misleading empty result. Music Services no longer
+lists radio or a Coming Soon section; radio remains in Library and search.
+
+Validation: 227 tests passed, Simulator Release and release identity checks
+passed, and warm/dark search-control screenshots were inspected. The live WSUM
+schedule returned Sam's Jams for the query `sam`.
+
+### Build 54 (available to the internal Test group)
 
 Radio now sits beside Playlists and Artists, with a Radio search filter. WSUM
 programs have persistent hearts and native recent-broadcast/track-list views.

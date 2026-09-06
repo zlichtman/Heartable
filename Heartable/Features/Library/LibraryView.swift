@@ -30,7 +30,7 @@ struct LibraryView: View {
     @State private var folders: [FolderDTO] = []
 
     enum BrowseMode: String, CaseIterable, Identifiable {
-        case playlists = "Playlists", artists = "Artists", radio = "Radio"
+        case playlists = "Playlists", artists = "Artists"
         var id: String { rawValue }
     }
 
@@ -141,7 +141,24 @@ struct LibraryView: View {
     /// The primary Library task is finding music. Broken creation affordances are
     /// intentionally absent until their end-to-end workflows are dependable.
     private var searchRow: some View {
-        searchField
+        HStack(spacing: 10) {
+            searchField
+            NavigationLink {
+                RadioLibraryView(saved: librarySession.savedRadio)
+                    .navigationTitle("Radio")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar(.visible, for: .navigationBar)
+                    .tint(theme.palette.rose)
+            } label: {
+                Image(systemName: "radio")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(theme.palette.rose)
+                    .frame(width: 44, height: 44)
+                    .background(theme.palette.surface, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Radio")
+        }
     }
 
     private var searchField: some View {
@@ -188,11 +205,6 @@ struct LibraryView: View {
     // MARK: Browse
 
     private var browse: some View {
-        VStack(spacing: 0) {
-            if browseMode == .radio {
-                browseControls
-                RadioLibraryView(saved: librarySession.savedRadio)
-            } else {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 browseControls
@@ -212,8 +224,6 @@ struct LibraryView: View {
             .padding(.top, 4)
         }
         .scrollDismissesKeyboard(.interactively)
-            }
-        }
     }
 
     /// Full-width tappable bar for the master Liked Songs list. Opens the same
@@ -257,13 +267,10 @@ struct LibraryView: View {
 
     /// Mode toggle on the left; sort + layout controls on the right (Playlists only).
     private var browseControls: some View {
-        VStack(spacing: 8) {
-          HStack(spacing: 10) {
+        HStack(spacing: 10) {
             ForEach(BrowseMode.allCases) { mode in
                 modeChip(mode)
             }
-          }
-          HStack(spacing: 10) {
             Spacer(minLength: 0)
             if browseMode == .playlists {
                 sortButton
@@ -271,7 +278,6 @@ struct LibraryView: View {
             } else if browseMode == .artists {
                 artistSortButton
             }
-          }
         }
         .padding(.horizontal, 16)
     }
@@ -284,7 +290,6 @@ struct LibraryView: View {
                 .foregroundStyle(on ? .white : theme.palette.textSecondary)
                 .padding(.horizontal, 14).padding(.vertical, 7)
                 .frame(minHeight: 44)
-                .frame(maxWidth: .infinity)
                 .background(on ? theme.palette.rose : theme.palette.surface)
                 .clipShape(Capsule())
                 .contentShape(Capsule())

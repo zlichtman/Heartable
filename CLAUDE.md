@@ -116,8 +116,8 @@ Only Apple Music, Spotify, Plex, and Jellyfin are library connections. Last.fm,
 when configured, is a separate history connection. Audius, Deezer, and WSUM
 are always-available public search adapters, not pairings.
 Never include public charts in library hydration, account restoration, or stats.
-Search defaults to Heartable + connected libraries; public sources require an
-explicit multi-selection. Preserve selected sources across query changes, and
+Search defaults to All: Heartable, connected libraries, and public search sources
+including WSUM shows. Type selects All or an explicit multi-selection. Preserve selected sources across query changes, and
 reset them with the account shell. Search choices do not change account pairings.
 
 All provider content normalizes into `UnifiedTrack`, `UnifiedPlaylist`, and
@@ -212,8 +212,10 @@ with the whole playlist queue. Do not add a second play action to the caption.
 
 WSUM station and program hearts are account-scoped on this device and survive relaunch.
 Show listings come from the official Spinitron calendar, retain last-good data,
-and distinguish broadcast times from recordings. Radio is a browse/search mode,
-not a separate row between Heartables and playlists. Program hearts survive weekly
+and distinguish broadcast times from recordings. Radio opens from the shortcut to
+the right of Library search and remains a search filter. Keep Playlists/Artists
+and sort/layout controls on one row; do not add Radio to that row or between
+Heartables and playlists. Program hearts survive weekly
 airing changes and sort first. Only offer a show's Listen live action while it
 is on air; show history and broadcast track logs render natively inside Heartable.
 Do not launch external station/playlist pages or imply a track log is a replay.

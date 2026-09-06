@@ -3,10 +3,10 @@ import SwiftUI
 enum LibrarySearchResultType: String, CaseIterable, Identifiable {
     case all = "All"
     case songs = "Songs"
-    case artists = "Artists"
-    case radio = "Radio"
-    case profiles = "Profiles"
     case playlists = "Playlists"
+    case artists = "Artists"
+    case profiles = "Profiles"
+    case radio = "Stations"
 
     var id: String { rawValue }
 }
@@ -52,11 +52,11 @@ struct LibrarySearchResultsView: View {
     }
     private var tracks: [MasterTrack] {
         guard selectedType == .all || selectedType == .songs else { return [] }
-        return providerProjectedTracks
+        return providerProjectedTracks.filter { !$0.providers.contains(.wsum) }
     }
     private var artists: [MasterArtist] {
         guard selectedType == .all || selectedType == .artists else { return [] }
-        return MasterLibraryStore.rankArtists(providerProjectedTracks, query: master.searchTerm)
+        return MasterLibraryStore.rankArtists(providerProjectedTracks.filter { !$0.providers.contains(.wsum) }, query: master.searchTerm)
     }
     private var playlists: [UnifiedPlaylist] {
         guard selectedType == .all || selectedType == .playlists else { return [] }
@@ -68,12 +68,19 @@ struct LibrarySearchResultsView: View {
         return results.people
     }
     private var sourceLabel: String {
-        if master.searchScope.selection == nil { return "Libraries" }
+        if master.searchScope.selection == nil { return "All" }
         if selectedProviders.count == 1, let id = selectedProviders.first { return providerName(id) }
         return "\(selectedProviders.count) apps"
     }
     private var filteredIsEmpty: Bool {
-        tracks.isEmpty && artists.isEmpty && playlists.isEmpty && profiles.isEmpty && shows.isEmpty
+        tracks.isEmpty && artists.isEmpty && playlists.isEmpty && profiles.isEmpty && shows.isEmpty && stations.isEmpty
+    }
+    private var stations: [FeaturedRadioStations.Station] {
+        guard selectedType == .all || selectedType == .radio else { return [] }
+        return providerProjectedTracks.compactMap {
+            guard let source = $0.source(for: .wsum) else { return nil }
+            return FeaturedRadioStations.station(id: source.providerTrackID)
+        }
     }
     private var shows: [WSUMShow] {
         (selectedType == .all || selectedType == .radio) && selectedProviders.contains(.wsum) ? results.shows : []
@@ -96,10 +103,9 @@ struct LibrarySearchResultsView: View {
             .filter { seen.insert($0).inserted }
     }
     private var filterColumns: [GridItem] {
-        let count = dynamicTypeSize.isAccessibilitySize ? 2 : 3
         return Array(
             repeating: GridItem(.flexible(minimum: 0), spacing: 8),
-            count: count
+            count: 3
         )
     }
 
@@ -107,8 +113,18 @@ struct LibrarySearchResultsView: View {
         VStack(spacing: 0) {
             filterBar
             Group {
-                if selectedType == .radio {
-                    RadioLibraryView(saved: librarySession.savedRadio, query: master.searchTerm)
+                if selectedType == .profiles && !selectedProviders.contains(.heartable) {
+                    VStack(spacing: 12) {
+                        emptyText(selectedProviders == [.spotify]
+                            ? "Spotify doesn’t support searching for people."
+                            : "Profile search is available on Heartable.")
+                        Button("Search Heartable profiles") {
+                            master.searchScope.selection = [.heartable]
+                        }
+                        .font(Typography.semibold(14))
+                        .foregroundStyle(theme.palette.rose)
+                        .frame(minHeight: 44)
+                    }
                 } else if master.searching && filteredIsEmpty {
                     loading
                 } else if filteredIsEmpty {
@@ -125,6 +141,12 @@ struct LibrarySearchResultsView: View {
             SearchSourcesDrawer(
                 items: providerFilterItems,
                 onSelect: { item in
+                    if item.id == "all" {
+                        master.searchScope.selection = nil
+                        selectedType = .all
+                        showingProviderPicker = false
+                        return
+                    }
                     guard let id = ProviderID(rawValue: item.id) else { return }
                     master.searchScope.toggle(id, connected: Set(connectedProviderIDs))
                 }
@@ -134,21 +156,19 @@ struct LibrarySearchResultsView: View {
 
     private var filterBar: some View {
         LazyVGrid(columns: filterColumns, spacing: 8) {
-            ForEach(LibrarySearchResultType.allCases) { type in
-                typeChip(type)
-            }
-
             Button {
                 UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 showingProviderPicker = true
             } label: {
                 HStack(spacing: 6) {
-                    if selectedProviders.count == 1, let id = selectedProviders.first {
-                        ProviderLogo(id: id, size: 17)
+                    VStack(spacing: 1) {
+                        Text("Type").font(Typography.medium(10))
+                            .foregroundStyle(theme.palette.textSecondary)
+                        Text(sourceLabel)
+                            .font(Typography.semibold(12))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                     }
-                    Text(sourceLabel)
-                        .font(Typography.semibold(12))
-                        .lineLimit(1)
                     Image(systemName: "chevron.down")
                         .font(.system(size: 9, weight: .bold))
                 }
@@ -161,18 +181,21 @@ struct LibrarySearchResultsView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Filter by app")
             .accessibilityValue(filterProviders.filter { selectedProviders.contains($0) }.map(providerName).joined(separator: ", "))
+            ForEach(LibrarySearchResultType.allCases.filter { $0 != .all }) { type in
+                typeChip(type)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
     }
 
     private var providerFilterItems: [HeartableChoiceItem] {
-        filterProviders.map { provider in
+        [HeartableChoiceItem(id: "all", icon: "square.grid.2x2", title: "All", isSelected: master.searchScope.selection == nil)] + filterProviders.map { provider in
             HeartableChoiceItem(
                 id: provider.rawValue,
                 icon: "music.note",
                 title: providerName(provider),
-                isSelected: selectedProviders.contains(provider),
+                isSelected: master.searchScope.selection != nil && selectedProviders.contains(provider),
                 providerID: provider
             )
         }
@@ -181,7 +204,7 @@ struct LibrarySearchResultsView: View {
     private func typeChip(_ type: LibrarySearchResultType) -> some View {
         let selected = selectedType == type
         return Button {
-            selectedType = type
+            selectedType = selectedType == type ? .all : type
         } label: {
             Text(type.rawValue)
                 .font(Typography.semibold(12))
@@ -241,6 +264,12 @@ struct LibrarySearchResultsView: View {
                     Text("Shows").font(Typography.semibold(13)).foregroundStyle(theme.palette.textMuted)
                         .padding(.top, 20).padding(.bottom, 12)
                     ForEach(shows.prefix(20)) { WSUMShowRow(show: $0).padding(.vertical, 8) }
+                }
+                if !stations.isEmpty {
+                    sectionHeader("Stations", count: stations.count, type: .radio, shown: stations.count)
+                    ForEach(stations, id: \.id) { station in
+                        RadioStationRow(station: station, saved: librarySession.savedRadio)
+                    }
                 }
                 if !artists.isEmpty {
                     sectionHeader(

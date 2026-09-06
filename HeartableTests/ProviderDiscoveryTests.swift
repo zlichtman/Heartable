@@ -57,18 +57,29 @@ final class ProviderDiscoveryTests: XCTestCase {
         }
     }
 
-    func testSearchStartsWithLibrariesAndSupportsExplicitMultiSelection() {
+    func testSearchAllIncludesRadioAndSupportsExplicitMultiSelection() {
         var scope = LibrarySearchScope()
         let connected: Set<ProviderID> = [.spotify, .apple]
-        XCTAssertEqual(scope.resolved(connected: connected), [.heartable, .spotify, .apple])
+        XCTAssertEqual(scope.resolved(connected: connected), Set(ProviderCatalog.publicSearchIDs).union([.heartable, .spotify, .apple]))
         scope.toggle(.wsum, connected: connected)
+        XCTAssertEqual(scope.resolved(connected: connected), [.wsum])
         scope.toggle(.audius, connected: connected)
-        XCTAssertEqual(scope.resolved(connected: connected), [.heartable, .spotify, .apple, .wsum, .audius])
+        XCTAssertEqual(scope.resolved(connected: connected), [.wsum, .audius])
+        scope.toggle(.apple, connected: connected)
+        XCTAssertTrue(scope.resolved(connected: connected).contains(.apple))
         scope.toggle(.apple, connected: connected)
         XCTAssertFalse(scope.resolved(connected: connected).contains(.apple))
-        XCTAssertEqual(scope.resolved(connected: []), [.heartable, .wsum, .audius])
+        XCTAssertEqual(scope.resolved(connected: []), [.wsum, .audius])
         scope.selection = []
         XCTAssertTrue(scope.resolved(connected: connected).isEmpty)
+        scope.selection = nil
+        XCTAssertTrue(scope.resolved(connected: connected).contains(.wsum))
+    }
+
+    @MainActor
+    func testSearchHasFiveCategoriesAfterTheTypeSelector() {
+        XCTAssertEqual(LibrarySearchResultType.allCases.filter { $0 != .all }.map(\.rawValue),
+                       ["Songs", "Playlists", "Artists", "Profiles", "Stations"])
     }
 
     @MainActor
