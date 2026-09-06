@@ -8,6 +8,15 @@ struct WSUMShow: Codable, Hashable, Identifiable, Sendable {
     let endsAt: Date
     let pageURL: URL
 
+    var favoriteID: String {
+        // A live broadcast may use /pl/ while next week's slot uses /show/.
+        // Keep favorites attached to the program, not either URL or an airing.
+        let identity = "\(title.lowercased())|\(host.lowercased())"
+        return "wsum-program-" + Data(identity.utf8).base64EncodedString()
+            .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
     func isOnAir(at now: Date = Date()) -> Bool { startsAt <= now && now < endsAt }
 
     var airtime: String {

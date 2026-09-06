@@ -14,10 +14,11 @@ an upstream API having a feature does not mean Heartable implements it.
 
 Radio includes WSUM 91.7 FM, Freeflow, and Sports, using the station's official
 HTTPS streams. Station listening is visible as now playing but is not counted
-as repeated song listens. The next release adds station bookmarks (account-scoped
-on this device) and the official Spinitron show calendar. Show pages are not
-recordings: off-air programs link to official details/playlist logs; live listening
-is offered during airtime. Schedule failures retain the last successful cache.
+as repeated song listens. Radio browse/search includes persistent station/program
+hearts (account-scoped on this device), the official Spinitron show calendar,
+and native recent-broadcast and track-log pages for all listed shows. Hearted
+programs sort first. Track logs are not replay recordings; live listening is
+offered during airtime. Schedule/page failures retain the last successful cache.
 [WSUM](https://wsum.org/), [official calendar](https://spinitron.com/WSUM/calendar?layout=1)
 
 Internet Archive, ListenBrainz, Mixcloud, and the general Radio Browser adapter

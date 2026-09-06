@@ -505,13 +505,14 @@ struct SpotifyPlaylist: Decodable, Sendable {
         name = (try? c.decode(String.self, forKey: .name)) ?? ""
         description = try? c.decode(String.self, forKey: .description)
         images = try? c.decode([SpotifyImage].self, forKey: .images)
-        tracks = try? c.decode(SpotifyTrackCount.self, forKey: .tracks)
+        tracks = (try? c.decode(SpotifyTrackCount.self, forKey: .items))
+            ?? (try? c.decode(SpotifyTrackCount.self, forKey: .tracks))
         owner = try? c.decode(SpotifyOwner.self, forKey: .owner)
         snapshotID = try? c.decode(String.self, forKey: .snapshotID)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, description, images, tracks, owner
+        case id, name, description, images, tracks, items, owner
         case snapshotID = "snapshot_id"
     }
 }
@@ -574,7 +575,15 @@ private struct PlaylistTrackItem: Decodable {
     }
 }
 
-private struct Paged<T: Decodable>: Decodable {
+struct Paged<T: Decodable>: Decodable {
     let items: [T]?
     let next: String?
+
+    private enum CodingKeys: String, CodingKey { case items, next }
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Missing/null items is not proof that the user's library is empty.
+        items = try container.decode([T].self, forKey: .items)
+        next = try container.decodeIfPresent(String.self, forKey: .next)
+    }
 }

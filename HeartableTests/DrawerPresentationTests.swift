@@ -26,6 +26,7 @@ final class DrawerPresentationTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(1100))
         let sheet = try XCTUnwrap(host.presentedViewController)
         XCTAssertGreaterThan(sheet.view.bounds.height, 200)
+        XCTAssertLessThan(sheet.view.bounds.height, window.bounds.height * 0.75)
         let screenshot = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
@@ -44,15 +45,12 @@ private struct DrawerFixture: View {
         LinearGradient(colors: [.orange, .blue], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
             .task { shown = true }
             .sheet(isPresented: $shown) {
-                HeartableChoiceSheet(
-                    title: "Search in",
+                SearchSourcesDrawer(
                     items: ids.map {
                         .init(id: $0.rawValue, icon: "music.note",
                               title: $0 == .heartable ? "Heartable" : ProviderCatalog.entry($0)!.label,
                               isSelected: selected.contains($0), providerID: $0)
                     },
-                    dismissOnSelection: false,
-                    onCancel: { shown = false },
                     onSelect: {
                         guard let id = ProviderID(rawValue: $0.id) else { return }
                         if !selected.insert(id).inserted { selected.remove(id) }

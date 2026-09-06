@@ -20,11 +20,11 @@ final class SavedRadioStations {
         self.ownerID = ownerID
         guard let ownerID else { ids = []; return }
         let key = AccountSessionStore.scopedKey(Self.storageKey, ownerID: ownerID)
-        ids = Set(defaults.stringArray(forKey: key) ?? []).intersection(FeaturedRadioStations.all.map(\.id))
+        ids = Set(defaults.stringArray(forKey: key) ?? []).filter(Self.isValid)
     }
 
     func toggle(_ id: String) {
-        guard let ownerID, FeaturedRadioStations.station(id: id) != nil else { return }
+        guard let ownerID, Self.isValid(id) else { return }
         if ids.contains(id) { ids.remove(id) } else { ids.insert(id) }
         defaults.set(ids.sorted(), forKey: AccountSessionStore.scopedKey(Self.storageKey, ownerID: ownerID))
     }
@@ -32,5 +32,11 @@ final class SavedRadioStations {
     func clear(ownerID: UUID) {
         defaults.removeObject(forKey: AccountSessionStore.scopedKey(Self.storageKey, ownerID: ownerID))
         if self.ownerID == ownerID { ids = [] }
+    }
+
+    private static func isValid(_ id: String) -> Bool {
+        FeaturedRadioStations.station(id: id) != nil ||
+            (id.hasPrefix("wsum-program-") && id.count > 13 && id.count < 512 &&
+             id.dropFirst(13).allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" })
     }
 }

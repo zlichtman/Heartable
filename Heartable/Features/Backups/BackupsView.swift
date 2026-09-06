@@ -42,6 +42,10 @@ struct BackupsView: View {
     @State private var expandedID: UUID?
     @State private var playlists: [SnapshotPlaylistDTO] = []
     @State private var likedCount = 0
+    @State private var detailLoading = false
+    @State private var detailFailed = false
+    @State private var detailRequest = UUID()
+    @State private var detailCache: [UUID: ([SnapshotPlaylistDTO], Int)] = [:]
     @State private var selectedContent: BackupContentSelection?
     @State private var selectedDiff: BackupDiffSelection?
     @State private var historyMode: HistoryMode = .history
@@ -115,6 +119,8 @@ struct BackupsView: View {
             snapshots = []
             derivedProviders = [:]
             expandedID = nil
+            detailCache = [:]
+            detailRequest = UUID()
             selectedContent = nil
             selectedDiff = nil
         }
@@ -696,6 +702,19 @@ struct BackupsView: View {
         Divider().overlay(theme.palette.border)
 
         VStack(alignment: .leading, spacing: 8) {
+            if detailLoading {
+                HStack(spacing: 10) {
+                    ProgressView().tint(theme.palette.rose)
+                    Text("Loading backup…").font(Typography.body(12))
+                        .foregroundStyle(theme.palette.textMuted)
+                }.frame(minHeight: 44)
+            } else if detailFailed {
+                Button("Couldn't load backup. Tap to retry.") {
+                    expandedID = nil
+                    Task { await toggleExpand(snapshot) }
+                }.font(Typography.body(12)).foregroundStyle(theme.palette.rose)
+                    .frame(minHeight: 44)
+            }
             if likedCount > 0 {
                 Button {
                     selectedContent = .likedSongs(
@@ -713,7 +732,7 @@ struct BackupsView: View {
                 .buttonStyle(.plain)
             }
 
-            if playlists.isEmpty {
+            if playlists.isEmpty && !detailLoading && !detailFailed {
                 Text(likedCount > 0 ? "No playlists in this backup." : "This backup is empty.")
                     .font(Typography.body(12))
                     .foregroundStyle(theme.palette.textMuted)
@@ -928,17 +947,38 @@ struct BackupsView: View {
     private func toggleExpand(_ snap: LibrarySnapshotDTO) async {
         if expandedID == snap.id {
             expandedID = nil
+            detailRequest = UUID()
             return
         }
+        let request = UUID()
+        detailRequest = request
+        let owner = AccountSessionStore.currentOwnerID
+        detailFailed = false
+        if let cached = detailCache[snap.id] {
+            playlists = cached.0
+            likedCount = cached.1
+            detailLoading = false
+            expandedID = snap.id
+            return
+        }
+        detailLoading = true
         expandedID = snap.id
         playlists = []
-        likedCount = 0
-        async let pls = BackendAPI.shared.fetchSnapshotPlaylists(snapshotID: snap.id)
-        async let liked = BackendAPI.shared.fetchSnapshotLikedTracks(snapshotID: snap.id)
-        let (loadedPls, loadedLiked) = await (pls, liked)
-        guard expandedID == snap.id else { return }
-        playlists = loadedPls
-        likedCount = loadedLiked.count
+        likedCount = snap.likedCount ?? 0
+        do {
+            async let pls = BackendAPI.shared.requireSnapshotPlaylists(snapshotID: snap.id)
+            async let liked = BackendAPI.shared.requireSnapshotLikedTracks(snapshotID: snap.id)
+            let (loadedPls, loadedLiked) = try await (pls, liked)
+            guard detailRequest == request, AccountSessionStore.currentOwnerID == owner else { return }
+            detailCache[snap.id] = (loadedPls, loadedLiked.count)
+            playlists = loadedPls
+            likedCount = loadedLiked.count
+            detailLoading = false
+        } catch {
+            guard detailRequest == request, AccountSessionStore.currentOwnerID == owner else { return }
+            detailLoading = false
+            detailFailed = true
+        }
     }
 
     private func restore(_ id: UUID) async {
@@ -976,6 +1016,8 @@ struct BackupsView: View {
         guard ok else { return }
         snapshots.removeAll { $0.id == id }
         derivedProviders[id] = nil
+        detailCache[id] = nil
+        detailRequest = UUID()
         if expandedID == id { expandedID = nil }
     }
 }

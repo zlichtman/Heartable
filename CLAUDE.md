@@ -210,10 +210,13 @@ delayed scroll task that produces a visible correction after rotation.
 Playlist Play lives opposite Back; in landscape it starts the selected song
 with the whole playlist queue. Do not add a second play action to the caption.
 
-WSUM station bookmarks are account-scoped on this device and survive relaunch.
+WSUM station and program hearts are account-scoped on this device and survive relaunch.
 Show listings come from the official Spinitron calendar, retain last-good data,
-and distinguish broadcast times from recordings. Only offer a show's Listen
-live action while it is on air; off-air shows link to their official details.
+and distinguish broadcast times from recordings. Radio is a browse/search mode,
+not a separate row between Heartables and playlists. Program hearts survive weekly
+airing changes and sort first. Only offer a show's Listen live action while it
+is on air; show history and broadcast track logs render natively inside Heartable.
+Do not launch external station/playlist pages or imply a track log is a replay.
 
 Gift mixtapes start from the plus on a friend's profile, not a separate Library
 entry. Draft metadata and images stay owner-only until explicit Send atomically

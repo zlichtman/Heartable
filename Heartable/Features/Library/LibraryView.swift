@@ -30,7 +30,7 @@ struct LibraryView: View {
     @State private var folders: [FolderDTO] = []
 
     enum BrowseMode: String, CaseIterable, Identifiable {
-        case playlists = "Playlists", artists = "Artists"
+        case playlists = "Playlists", artists = "Artists", radio = "Radio"
         var id: String { rawValue }
     }
 
@@ -188,6 +188,11 @@ struct LibraryView: View {
     // MARK: Browse
 
     private var browse: some View {
+        VStack(spacing: 0) {
+            if browseMode == .radio {
+                browseControls
+                RadioLibraryView(saved: librarySession.savedRadio)
+            } else {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 browseControls
@@ -195,7 +200,6 @@ struct LibraryView: View {
                 // the playlists list (not a row inside the list).
                 if browseMode == .playlists {
                     likedBar
-                    radioBar
                 }
                 if store.loading && store.playlists.isEmpty {
                     loadingRow
@@ -208,6 +212,8 @@ struct LibraryView: View {
             .padding(.top, 4)
         }
         .scrollDismissesKeyboard(.interactively)
+            }
+        }
     }
 
     /// Full-width tappable bar for the master Liked Songs list. Opens the same
@@ -249,35 +255,23 @@ struct LibraryView: View {
         .padding(.horizontal, 16)
     }
 
-    private var radioBar: some View {
-        NavigationLink { RadioLibraryView(saved: librarySession.savedRadio) } label: {
-            HStack(spacing: 12) {
-                ProviderLogo(id: .wsum, size: 34)
-                Text("Radio").font(Typography.semibold(14)).foregroundStyle(theme.palette.text)
-                Spacer()
-                if !librarySession.savedRadio.ids.isEmpty {
-                    Text("\(librarySession.savedRadio.ids.count) saved")
-                        .font(Typography.body(12)).foregroundStyle(theme.palette.textSecondary)
-                }
-                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(theme.palette.textMuted)
-            }.frame(minHeight: 44).contentShape(Rectangle())
-        }.buttonStyle(.plain).padding(.horizontal, 24)
-    }
-
     /// Mode toggle on the left; sort + layout controls on the right (Playlists only).
     private var browseControls: some View {
-        HStack(spacing: 10) {
+        VStack(spacing: 8) {
+          HStack(spacing: 10) {
             ForEach(BrowseMode.allCases) { mode in
                 modeChip(mode)
             }
-            Spacer()
+          }
+          HStack(spacing: 10) {
+            Spacer(minLength: 0)
             if browseMode == .playlists {
                 sortButton
                 layoutButton
-            } else {
+            } else if browseMode == .artists {
                 artistSortButton
             }
+          }
         }
         .padding(.horizontal, 16)
     }
@@ -290,6 +284,7 @@ struct LibraryView: View {
                 .foregroundStyle(on ? .white : theme.palette.textSecondary)
                 .padding(.horizontal, 14).padding(.vertical, 7)
                 .frame(minHeight: 44)
+                .frame(maxWidth: .infinity)
                 .background(on ? theme.palette.rose : theme.palette.surface)
                 .clipShape(Capsule())
                 .contentShape(Capsule())

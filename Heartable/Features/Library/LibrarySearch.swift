@@ -4,6 +4,7 @@ enum LibrarySearchResultType: String, CaseIterable, Identifiable {
     case all = "All"
     case songs = "Songs"
     case artists = "Artists"
+    case radio = "Radio"
     case profiles = "Profiles"
     case playlists = "Playlists"
 
@@ -75,7 +76,7 @@ struct LibrarySearchResultsView: View {
         tracks.isEmpty && artists.isEmpty && playlists.isEmpty && profiles.isEmpty && shows.isEmpty
     }
     private var shows: [WSUMShow] {
-        selectedType == .all && selectedProviders.contains(.wsum) ? results.shows : []
+        (selectedType == .all || selectedType == .radio) && selectedProviders.contains(.wsum) ? results.shows : []
     }
     private var visibleTracks: [MasterTrack] {
         selectedType == .all ? Array(tracks.prefix(8)) : tracks
@@ -106,7 +107,9 @@ struct LibrarySearchResultsView: View {
         VStack(spacing: 0) {
             filterBar
             Group {
-                if master.searching && filteredIsEmpty {
+                if selectedType == .radio {
+                    RadioLibraryView(saved: librarySession.savedRadio, query: master.searchTerm)
+                } else if master.searching && filteredIsEmpty {
                     loading
                 } else if filteredIsEmpty {
                     empty
@@ -119,11 +122,8 @@ struct LibrarySearchResultsView: View {
             master.setSearch(master.searchTerm, localPlaylists: localPlaylists)
         }
         .sheet(isPresented: $showingProviderPicker) {
-            HeartableChoiceSheet(
-                title: "Search in",
+            SearchSourcesDrawer(
                 items: providerFilterItems,
-                dismissOnSelection: false,
-                onCancel: { showingProviderPicker = false },
                 onSelect: { item in
                     guard let id = ProviderID(rawValue: item.id) else { return }
                     master.searchScope.toggle(id, connected: Set(connectedProviderIDs))
@@ -139,6 +139,7 @@ struct LibrarySearchResultsView: View {
             }
 
             Button {
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
                 showingProviderPicker = true
             } label: {
                 HStack(spacing: 6) {

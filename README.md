@@ -143,7 +143,21 @@ An existing Spotify connection needs reconnecting to grant the new recent-histor
 scope. Queue installation now verifies native Shuffle/Repeat state on the device
 that received Play instead of assuming accepted commands finished in order.
 
-### Build 53 (TestFlight processing pending)
+### Build 54 (release preparation)
+
+Radio now sits beside Playlists and Artists, with a Radio search filter. WSUM
+programs have persistent hearts and native recent-broadcast/track-list views.
+The Search in drawer uses a compact themed source grid. Backup expansion retains
+loaded contents and distinguishes initial loading/errors from verified emptiness.
+Spotify playlist counts accept both `items` and legacy `tracks`; missing/null
+page items cannot replace a cached collection with an empty response.
+
+Validation: 224 tests passed; the Simulator Release build and identity check
+passed. Warm/dark drawer screenshots were inspected. The live WSUM parser
+resolved 18 recent broadcasts and 19 latest-broadcast track rows for Sam's Jams.
+This does not establish whether a tester's device received Spotify HTTP 429.
+
+### Build 53 (available to the internal Test Group)
 
 - Provider-specific refreshes retain Spotify playlists and cached track order
   during rate limits, even while another service refreshes successfully.
@@ -156,7 +170,7 @@ that received Play instead of assuming accepted commands finished in order.
 - Notification controls separate silent routine confirmations, automatic backups,
   an opt-in weekly reminder, and sounds. See the [notification audit](docs/NOTIFICATIONS.md).
 
-These changes are not yet a new processed TestFlight build.
+Build 53 completed Xcode Cloud and TestFlight processing on September 6.
 Local validation on September 6: 218 tests passed (including 13 notification
 tests), release identity passed, and unsigned generic-iPhone and generic-Simulator
 Release builds succeeded. Remote Mixtape rollback-only privacy tests also passed; no test users
