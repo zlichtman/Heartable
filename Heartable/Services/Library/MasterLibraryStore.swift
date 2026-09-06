@@ -37,6 +37,7 @@ final class MasterLibraryStore {
     }
 
     private(set) var searchTerm = ""
+    var searchScope = LibrarySearchScope()
     private(set) var searching = false
     private(set) var searchResults = SearchResults()
     /// True after a search completed with zero connected providers (drives the
@@ -281,8 +282,7 @@ final class MasterLibraryStore {
     /// keystroke; only the latest term's results ever render.
     func setSearch(
         _ term: String,
-        localPlaylists: [UnifiedPlaylist],
-        providerFilter: ProviderID? = nil
+        localPlaylists: [UnifiedPlaylist]
     ) {
         searchTerm = term
         searchTask?.cancel()
@@ -303,6 +303,7 @@ final class MasterLibraryStore {
             playlists: localPlaylists
         )
         searching = true
+        let scope = searchScope
         searchTask = Task { [weak self] in
             guard let self else { return }
             try? await Task.sleep(for: self.debounce)
@@ -310,7 +311,7 @@ final class MasterLibraryStore {
             await self.runSearch(
                 query,
                 localPlaylists: localPlaylists,
-                providerFilter: providerFilter
+                scope: scope
             )
         }
     }
@@ -320,12 +321,11 @@ final class MasterLibraryStore {
     private func runSearch(
         _ query: String,
         localPlaylists: [UnifiedPlaylist],
-        providerFilter: ProviderID?
+        scope: LibrarySearchScope
     ) async {
-        let connectedProviders = await ProviderRegistry.connected()
-        let providers = connectedProviders.filter {
-            providerFilter == nil || $0.id == providerFilter
-        }
+        let connectedProviders = await ProviderRegistry.searchable()
+        let selectedIDs = scope.resolved(connected: Set(connectedProviders.map(\.id)))
+        let providers = connectedProviders.filter { selectedIDs.contains($0.id) }
         if Task.isCancelled { return }
 
         // Publish cached matches immediately. Network providers and profiles then
@@ -333,17 +333,20 @@ final class MasterLibraryStore {
         let localMatches = tracks
             .filter { Self.trackMatches($0, query: query) }
             .flatMap(\.sources)
+            .filter { selectedIDs.contains($0.providerID) }
         let localTracks = Self.rankTracks(MasterTrack.group(localMatches), query: query)
-        let matchingPlaylists = Self.rankPlaylists(localPlaylists, query: query)
+        let matchingPlaylists = Self.rankPlaylists(
+            localPlaylists.filter { selectedIDs.contains($0.providerID) }, query: query
+        )
         searchResults = SearchResults(
             tracks: localTracks,
             artists: Self.rankArtists(localTracks, query: query),
             playlists: matchingPlaylists,
             people: []
         )
-        searchedWithNoProviders = connectedProviders.isEmpty
+        searchedWithNoProviders = providers.isEmpty
 
-        let shouldFindPeople = providerFilter == nil || providerFilter == .heartable
+        let shouldFindPeople = selectedIDs.contains(.heartable)
         async let peopleFetch: [FoundProfileDTO] = shouldFindPeople
             ? Self.findPeople(query)
             : []
@@ -367,7 +370,7 @@ final class MasterLibraryStore {
             playlists: matchingPlaylists,
             people: Self.rankPeople(people, query: query)
         )
-        searchedWithNoProviders = connectedProviders.isEmpty
+        searchedWithNoProviders = providers.isEmpty
         searching = false
     }
 
@@ -502,7 +505,7 @@ final class MasterLibraryStore {
         }
     }
 
-    private nonisolated static func rankArtists(
+    nonisolated static func rankArtists(
         _ tracks: [MasterTrack],
         query: String
     ) -> [MasterArtist] {
@@ -604,6 +607,7 @@ final class MasterLibraryStore {
         artists = []
         searchResults = SearchResults()
         searchTerm = ""
+        searchScope = LibrarySearchScope()
         searching = false
         loadedProviders = []
         lastLoadedAt = nil

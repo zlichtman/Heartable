@@ -11,43 +11,16 @@ import Foundation
 struct InternetArchiveProvider: MusicProvider {
     let id: ProviderID = .internetArchive
 
-    private static let enabledKey = "heartable.internetArchive.enabled"
     private static let searchBase = "https://archive.org/advancedsearch.php"
 
-    // MARK: - Connection (an enable flag in UserDefaults; no account needed)
-
-    func isConnected() async -> Bool {
-        AccountSessionStore.defaultString(forKey: Self.enabledKey) == "1"
-    }
-
-    func connect() async throws {
-        // The open audio catalog + file streaming need nothing — enabling
-        // Internet Archive just turns it on as a source.
-        AccountSessionStore.setDefault("1", forKey: Self.enabledKey)
-    }
-
-    func disconnect() async {
-        AccountSessionStore.removeDefault(forKey: Self.enabledKey)
-        await MainActor.run {
-            if LocalAudioEngine.shared.isCurrent(.internetArchive) {
-                LocalAudioEngine.shared.stop()
-            }
-        }
-    }
-
-    func restoreConnection(metadata: [String: String]) async {
-        AccountSessionStore.setDefault("1", forKey: Self.enabledKey)
-    }
+    // Public search sources are available without an account or enable flag.
+    func isConnected() async -> Bool { true }
+    func connect() async throws {}
+    func disconnect() async {}
 
     // MARK: - Reads (never throw — return [] on any failure)
 
-    func topTracks(range: StatRange, limit: Int) async -> [UnifiedTrack] {
-        guard await isConnected() else { return [] }
-        // Popularity across the whole audio catalog; `range` has no analogue here.
-        let query = "mediatype:(audio)"
-        let docs = await Self.advancedSearch(q: query, sort: "downloads+desc", limit: limit)
-        return docs.compactMap(Self.mapDoc)
-    }
+    func topTracks(range: StatRange, limit: Int) async -> [UnifiedTrack] { [] }
 
     // No Internet Archive user account, so there's nothing personal to pull.
     func likedTracks(limit: Int) async -> [UnifiedTrack] { [] }
@@ -57,7 +30,6 @@ struct InternetArchiveProvider: MusicProvider {
     func playlistTracks(_ playlistID: String) async -> [UnifiedTrack] { [] }
 
     func search(_ query: String) async -> [UnifiedTrack] {
-        guard await isConnected() else { return [] }
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? ""
         let q = "\(encoded)+AND+mediatype:(audio)"
         let docs = await Self.advancedSearch(q: q, sort: nil, limit: 25)

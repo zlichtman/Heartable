@@ -9,7 +9,7 @@ struct ListeningHistoryView: View {
     @Environment(TopTracksRepository.self) private var topTracks
     @Environment(BannerCenter.self) private var banners
 
-    @State private var history: [PlayEntryDTO] = []
+    @State private var history: [ListeningHistoryItem] = []
     @State private var loading = true
     @State private var confirmClear = false
     @State private var clearingHistory = false
@@ -113,6 +113,9 @@ struct ListeningHistoryView: View {
             prefs.refreshGhostMode()
             await load()
         }
+        .onReceive(NotificationCenter.default.publisher(for: .heartableHistoryImported)) { _ in
+            Task { await load() }
+        }
     }
 
     // MARK: - Rows
@@ -181,8 +184,9 @@ struct ListeningHistoryView: View {
         }
     }
 
-    private func row(_ entry: PlayEntryDTO) -> some View {
-        HStack(spacing: 12) {
+    private func row(_ item: ListeningHistoryItem) -> some View {
+        let entry = item.entry
+        return HStack(spacing: 12) {
             CoverArt(url: entry.albumArt.flatMap(URL.init(string:)), size: 50)
             VStack(alignment: .leading, spacing: 2) {
                 Text(entry.trackName ?? "Unknown track")
@@ -193,7 +197,7 @@ struct ListeningHistoryView: View {
                     .font(Typography.body(12))
                     .foregroundStyle(theme.palette.textSecondary)
                     .lineLimit(1)
-                Text(relativeLong(entry.playedAt ?? ""))
+                Text(relativeLong(entry.playedAt ?? "") + (item.imported ? " · Spotify" : ""))
                     .font(Typography.body(11))
                     .foregroundStyle(theme.palette.textMuted)
             }
@@ -211,7 +215,7 @@ struct ListeningHistoryView: View {
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityAction(named: "Delete from listening history") {
-            Task { await delete(entry) }
+            Task { await delete(item) }
         }
     }
 
@@ -223,13 +227,17 @@ struct ListeningHistoryView: View {
 
     private func load() async {
         loading = true
-        history = await BackendAPI.shared.fetchPlayHistory(limit: 200)
+        history = await BackendAPI.shared.fetchListeningHistory(limit: 200)
         loading = false
     }
 
-    private func delete(_ entry: PlayEntryDTO) async {
+    private func delete(_ entry: ListeningHistoryItem) async {
         do {
-            try await BackendAPI.shared.deletePlayEntries(ids: [entry.id])
+            if entry.imported {
+                try await BackendAPI.shared.deleteImportedPlay(id: entry.id)
+            } else {
+                try await BackendAPI.shared.deletePlayEntries(ids: [entry.id])
+            }
             history.removeAll { $0.id == entry.id }
             await topTracks.invalidateHistory()
             for (index, range) in StatRange.allCases.enumerated() {

@@ -28,6 +28,7 @@ final class ProvidersStore {
 
     private var ownerID: UUID?
     private var lifecycleID = UUID()
+    private var historyImportTask: Task<Void, Never>?
 
     var isRestoring: Bool { restorationState == .restoring }
 
@@ -38,6 +39,8 @@ final class ProvidersStore {
         if ownerID == userID, restorationState == .ready, !force { return }
 
         if ownerID != userID {
+            historyImportTask?.cancel()
+            historyImportTask = nil
             lifecycleID = UUID()
             ownerID = userID
             connectedIDs = []
@@ -57,7 +60,7 @@ final class ProvidersStore {
             try? await BackendAPI.shared.providerConnections()
         }
         defer { remoteTask.cancel() }
-        let local = Self.cachedManifest(ownerID: userID)
+        let local = Self.accountConnections(Self.cachedManifest(ownerID: userID))
         let cachedConnections = local.filter(\.connected)
         pairedIDs = Set(cachedConnections.compactMap {
             ProviderID(rawValue: $0.providerId)
@@ -71,7 +74,7 @@ final class ProvidersStore {
 
         let remote = await remoteTask.value
         guard lifecycleID == requestID, ownerID == userID else { return }
-        var manifest = Self.merge(local: local, remote: remote ?? [])
+        var manifest = Self.accountConnections(Self.merge(local: local, remote: remote ?? []))
         await apply(manifest: manifest, requestID: requestID)
         guard lifecycleID == requestID, ownerID == userID else { return }
 
@@ -107,6 +110,7 @@ final class ProvidersStore {
         hasRefreshed = true
         refreshGeneration &+= 1
         Self.cache(manifest, ownerID: userID)
+        if connectedIDs.contains(.spotify) { importSpotifyHistory(userID: userID) }
 
         // Backfill/mend the server manifest after the UI has stable state. This is
         // intentionally best-effort: an offline launch must not disconnect anyone.
@@ -133,6 +137,7 @@ final class ProvidersStore {
     /// Connect locally first, then record the account pairing. A temporary backend
     /// failure is cached and retried on activation; it never undoes a valid token.
     func connect(_ id: ProviderID) async throws {
+        guard ProviderCatalog.entry(id)?.requiresAccountConnection == true else { return }
         guard let ownerID else {
             throw ProviderError("Sign in to Heartable before connecting a service.")
         }
@@ -151,6 +156,7 @@ final class ProvidersStore {
     /// Use after a provider-specific form (currently Jellyfin) has created the
     /// local credential itself.
     func recordConnected(_ id: ProviderID) async throws {
+        guard ProviderCatalog.entry(id)?.requiresAccountConnection == true else { return }
         guard let ownerID else {
             throw ProviderError("Sign in to Heartable before connecting a service.")
         }
@@ -163,6 +169,11 @@ final class ProvidersStore {
     }
 
     func disconnect(_ id: ProviderID) async {
+        guard ProviderCatalog.entry(id)?.requiresAccountConnection == true else { return }
+        if id == .spotify {
+            historyImportTask?.cancel()
+            historyImportTask = nil
+        }
         guard let ownerID else { return }
         let requestID = lifecycleID
         let provider = ProviderRegistry.provider(for: id)
@@ -201,6 +212,8 @@ final class ProvidersStore {
     /// Forget in-memory state on sign-out/account switch. The account manifest and
     /// scoped Keychain vault deliberately remain intact.
     func reset() {
+        historyImportTask?.cancel()
+        historyImportTask = nil
         lifecycleID = UUID()
         ownerID = nil
         connectedIDs = []
@@ -251,13 +264,19 @@ final class ProvidersStore {
             metadata: metadata,
             userID: ownerID
         )
+        if provider.id == .spotify { importSpotifyHistory(userID: ownerID) }
+    }
+
+    private func importSpotifyHistory(userID: UUID) {
+        historyImportTask?.cancel()
+        historyImportTask = Task { await SpotifyHistoryImport.run(ownerID: userID) }
     }
 
     private func apply(manifest: [ProviderConnectionDTO], requestID: UUID) async {
         for row in manifest {
             guard lifecycleID == requestID,
                   let id = ProviderID(rawValue: row.providerId),
-                  ProviderCatalog.entry(id)?.status == .live else { continue }
+                  ProviderCatalog.entry(id)?.requiresAccountConnection == true else { continue }
             let provider = ProviderRegistry.provider(for: id)
             if row.connected {
                 await provider.restoreConnection(metadata: row.metadata)
@@ -269,7 +288,7 @@ final class ProvidersStore {
 
     private func probeLiveProviders() async -> Set<ProviderID> {
         let live = ProviderRegistry.all.filter {
-            ProviderCatalog.entry($0.id)?.status == .live
+            ProviderCatalog.entry($0.id)?.requiresAccountConnection == true
         }
         return await withTaskGroup(of: ProviderID?.self) { group in
             for provider in live {
@@ -290,13 +309,21 @@ final class ProvidersStore {
             guard lifecycleID == requestID,
                   ownerID == row.userId,
                   AccountSessionStore.currentOwnerID == row.userId,
-                  let id = ProviderID(rawValue: row.providerId) else { continue }
+                  let id = ProviderID(rawValue: row.providerId),
+                  ProviderCatalog.entry(id)?.requiresAccountConnection == true else { continue }
             try? await BackendAPI.shared.upsertProviderConnection(
                 providerId: id,
                 connected: row.connected,
                 metadata: row.metadata,
                 userID: row.userId
             )
+        }
+    }
+
+    nonisolated static func accountConnections(_ rows: [ProviderConnectionDTO]) -> [ProviderConnectionDTO] {
+        rows.filter {
+            guard let id = ProviderID(rawValue: $0.providerId) else { return false }
+            return ProviderCatalog.entry(id)?.requiresAccountConnection == true
         }
     }
 

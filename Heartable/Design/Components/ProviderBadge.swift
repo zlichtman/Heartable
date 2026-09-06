@@ -40,6 +40,7 @@ struct ProviderBadge: View {
     @ViewBuilder private var mark: some View {
         if let logo {
             Image(uiImage: logo)
+                .renderingMode(.original)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
         } else {
@@ -55,7 +56,9 @@ struct ProviderBadge: View {
 
     /// The bundled brand logo if one exists in the asset catalog, else nil.
     private var logo: UIImage? {
-        if id == .heartable { return nil }
+        if id == .heartable {
+            return UIImage(named: ProviderLogo.assetName(for: id, heartableIconKey: theme.appIconKey))
+        }
         return UIImage(named: "\(id.rawValue)-logo")
     }
 

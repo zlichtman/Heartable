@@ -12,38 +12,15 @@ struct DeezerProvider: MusicProvider {
     let id: ProviderID = .deezer
 
     private static let base = "https://api.deezer.com"
-    private static let enabledKey = "heartable.deezer.enabled"
 
-    // MARK: Connection (public catalog + previews need nothing; enable = a flag)
-
-    func isConnected() async -> Bool {
-        AccountSessionStore.defaultString(forKey: Self.enabledKey) == "1"
-    }
-
-    func connect() async throws {
-        AccountSessionStore.setDefault("1", forKey: Self.enabledKey)
-    }
-
-    func disconnect() async {
-        AccountSessionStore.removeDefault(forKey: Self.enabledKey)
-        await MainActor.run {
-            if LocalAudioEngine.shared.isCurrent(.deezer) {
-                LocalAudioEngine.shared.stop()
-            }
-        }
-    }
-
-    func restoreConnection(metadata: [String: String]) async {
-        AccountSessionStore.setDefault("1", forKey: Self.enabledKey)
-    }
+    // Public search sources are available without an account or enable flag.
+    func isConnected() async -> Bool { true }
+    func connect() async throws {}
+    func disconnect() async {}
 
     // MARK: Reads (never throw — return [] on not-connected/failure)
 
-    func topTracks(range: StatRange, limit: Int) async -> [UnifiedTrack] {
-        guard await isConnected() else { return [] }
-        let list: DZList? = await Self.get("/chart/0/tracks?limit=\(limit)")
-        return (list?.data ?? []).map(Self.mapTrack)
-    }
+    func topTracks(range: StatRange, limit: Int) async -> [UnifiedTrack] { [] }
 
     // Your Deezer favourites/playlists need their OAuth login (not wired yet).
     func likedTracks(limit: Int) async -> [UnifiedTrack] { [] }
@@ -51,13 +28,11 @@ struct DeezerProvider: MusicProvider {
     func playlists() async -> [UnifiedPlaylist] { [] }
 
     func playlistTracks(_ playlistID: String) async -> [UnifiedTrack] {
-        guard await isConnected() else { return [] }
         let list: DZList? = await Self.get("/playlist/\(playlistID)/tracks")
         return (list?.data ?? []).map(Self.mapTrack)
     }
 
     func search(_ query: String) async -> [UnifiedTrack] {
-        guard await isConnected() else { return [] }
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? query
         let list: DZList? = await Self.get("/search?q=\(encoded)")
         return (list?.data ?? []).map(Self.mapTrack)

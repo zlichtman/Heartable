@@ -4,7 +4,7 @@ import Foundation
 /// credentials and no per-user OAuth for public reads, and it hands out a direct
 /// streamable URL per track. That makes it the one provider Heartable can fully play
 /// *in-app* (via `LocalAudioEngine`) with zero setup, so "tap a song and it plays"
-/// works the moment you enable it.
+/// is available without an account.
 ///
 /// Reads that need a logged-in Audius account (your library, your playlists)
 /// require their OAuth flow, which we haven't wired — those return empty for now.
@@ -14,7 +14,6 @@ struct AudiusProvider: MusicProvider {
     let id: ProviderID = .audius
 
     private static let app = "app_name=Heartable"
-    private static let enabledKey = "heartable.audius.enabled"
     private static let fallbackHost = "https://discoveryprovider.audius.co"
 
     /// Audius is a network of discovery nodes; `api.audius.co` returns the healthy
@@ -51,40 +50,14 @@ struct AudiusProvider: MusicProvider {
         }
     }
 
-    // MARK: - Connection (an enable flag in UserDefaults; no account needed)
-
-    func isConnected() async -> Bool {
-        AccountSessionStore.defaultString(forKey: Self.enabledKey) == "1"
-    }
-
-    func connect() async throws {
-        // No account or OAuth needed for public catalog + streaming — enabling
-        // Audius just turns it on as a source.
-        AccountSessionStore.setDefault("1", forKey: Self.enabledKey)
-        // Warm the discovery-node pick so the first play is snappy.
-        Task { _ = await HostResolver.shared.host() }
-    }
-
-    func disconnect() async {
-        AccountSessionStore.removeDefault(forKey: Self.enabledKey)
-        await MainActor.run {
-            if LocalAudioEngine.shared.isCurrent(.audius) {
-                LocalAudioEngine.shared.stop()
-            }
-        }
-    }
-
-    func restoreConnection(metadata: [String: String]) async {
-        AccountSessionStore.setDefault("1", forKey: Self.enabledKey)
-    }
+    // Public search sources are available without an account or enable flag.
+    func isConnected() async -> Bool { true }
+    func connect() async throws {}
+    func disconnect() async {}
 
     // MARK: - Reads (never throw — return [] on any failure)
 
-    func topTracks(range: StatRange, limit: Int) async -> [UnifiedTrack] {
-        guard await isConnected() else { return [] }
-        let tracks = await get("/tracks/trending", params: "limit=\(limit)")
-        return tracks.map(Self.mapTrack)
-    }
+    func topTracks(range: StatRange, limit: Int) async -> [UnifiedTrack] { [] }
 
     // Your Audius library/likes need their OAuth login, which isn't wired yet.
     func likedTracks(limit: Int) async -> [UnifiedTrack] { [] }
@@ -92,13 +65,11 @@ struct AudiusProvider: MusicProvider {
     func playlists() async -> [UnifiedPlaylist] { [] }
 
     func playlistTracks(_ playlistID: String) async -> [UnifiedTrack] {
-        guard await isConnected() else { return [] }
         let tracks = await get("/playlists/\(playlistID)/tracks")
         return tracks.map(Self.mapTrack)
     }
 
     func search(_ query: String) async -> [UnifiedTrack] {
-        guard await isConnected() else { return [] }
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryValueAllowed) ?? ""
         let tracks = await get("/tracks/search", params: "query=\(encoded)")
         return tracks.map(Self.mapTrack)

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Account libraries, listening-history connections and optional public search
+/// Account libraries, listening-history connections and always-available public search
 /// sources are deliberately separate. Unimplemented services have no fake controls.
 struct MusicServicesView: View {
     @Environment(ProvidersStore.self) private var providers
@@ -10,23 +10,15 @@ struct MusicServicesView: View {
     @State private var busy: ProviderID?
     @State private var lastfmPromptShown = false
     @State private var lastfmUsername = ""
-    @State private var listenbrainzPromptShown = false
-    @State private var listenbrainzUsername = ""
     @State private var jellyfinSheetShown = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 legend
-                ForEach([ProviderSection.library, .history, .discovery], id: \.self) { section in
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(section.rawValue)
-                            .font(Typography.semibold(14))
-                            .foregroundStyle(theme.palette.textSecondary)
-                            .padding(.top, 10)
-                        ForEach(ProviderCatalog.entries(in: section)) { row($0) }
-                    }
-                }
+                providerSection(.library)
+                searchSources
+                if !ProviderCatalog.entries(in: .history).isEmpty { providerSection(.history) }
                 comingSoon
             }
             .padding(16)
@@ -63,25 +55,35 @@ struct MusicServicesView: View {
                 }
             )
         }
-        .sheet(isPresented: $listenbrainzPromptShown) {
-            HeartablePromptSheet(
-                icon: "waveform.path.ecg",
-                title: "ListenBrainz username",
-                message: "Heartable reads this account’s public listens.",
-                placeholder: "username",
-                text: $listenbrainzUsername,
-                actionTitle: "Connect",
-                autocapitalization: .never,
-                autocorrectionDisabled: true,
-                onCancel: { listenbrainzPromptShown = false },
-                onSubmit: {
-                    ListenBrainzProvider.setUsername(listenbrainzUsername)
-                    listenbrainzPromptShown = false
-                    if let entry = ProviderCatalog.entry(.listenbrainz) {
-                        performToggle(entry, connected: false)
-                    }
+
+    }
+
+    private func providerSection(_ section: ProviderSection) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeading(section.rawValue)
+            ForEach(ProviderCatalog.entries(in: section)) { row($0) }
+        }
+    }
+
+    private func sectionHeading(_ title: String) -> some View {
+        Text(title).font(Typography.semibold(14))
+            .foregroundStyle(theme.palette.textSecondary).padding(.top, 10)
+    }
+
+    private var searchSources: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeading("Search")
+            HStack(spacing: 0) {
+                ForEach(ProviderCatalog.publicSearchIDs) { id in
+                    ProviderLogo(id: id, size: 48)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityLabel(ProviderCatalog.entry(id)?.label ?? id.rawValue)
+                        .accessibilityValue("Available in search")
                 }
-            )
+            }
+            .padding(.vertical, 18)
+            .background(theme.palette.card, in: RoundedRectangle(cornerRadius: Theme.Radius.md))
+            .overlay(RoundedRectangle(cornerRadius: Theme.Radius.md).stroke(theme.palette.border))
         }
     }
 
@@ -192,11 +194,7 @@ struct MusicServicesView: View {
                         Text(entry.label).font(Typography.semibold(15))
                             .foregroundStyle(theme.palette.text).lineLimit(1)
                         capabilityIcons(entry)
-                        if entry.section == .discovery {
-                            Text(discoveryDetail(entry.id))
-                                .font(Typography.body(11))
-                                .foregroundStyle(theme.palette.textMuted)
-                        }
+
                     }
                     Spacer(minLength: 6)
                     control(
@@ -242,8 +240,7 @@ struct MusicServicesView: View {
         if busy == entry.id || (providers.isRestoring && !connected) {
             ProgressView().controlSize(.small)
         } else if live {
-            Button(entry.section == .discovery ? (connected ? "Hide" : "Include")
-                   : (connected ? "Disconnect" : (reconnectRequired ? "Reconnect" : "Connect"))) {
+            Button(connected ? "Disconnect" : (reconnectRequired ? "Reconnect" : "Connect")) {
                 toggle(entry, connected: connected)
             }
             .font(Typography.semibold(13))
@@ -254,26 +251,12 @@ struct MusicServicesView: View {
         }
     }
 
-    private func discoveryDetail(_ id: ProviderID) -> String {
-        switch id {
-        case .deezer: "30-second previews"
-        case .mixcloud: "Opens in Mixcloud"
-        case .radioBrowser: "Live radio · includes WSUM"
-        default: "Public catalog · no account needed"
-        }
-    }
-
     private func toggle(_ entry: ProviderCatalogEntry, connected: Bool) {
         // Last.fm needs a username before its first connect — ask in place
         // (prefilled, so this is also how you switch accounts later).
         if entry.id == .lastfm, !connected {
             lastfmUsername = LastfmProvider.username ?? ""
             lastfmPromptShown = true
-            return
-        }
-        if entry.id == .listenbrainz, !connected {
-            listenbrainzUsername = ListenBrainzProvider.username ?? ""
-            listenbrainzPromptShown = true
             return
         }
         // Jellyfin needs a server address + sign-in — a dedicated sheet, since
@@ -291,10 +274,10 @@ struct MusicServicesView: View {
             do {
                 if connected {
                     await providers.disconnect(entry.id)
-                    banners.info(entry.section == .discovery ? "Hidden \(entry.label) from search" : "Disconnected \(entry.label)")
+                    banners.info("Disconnected \(entry.label)")
                 } else {
                     try await providers.connect(entry.id)
-                    banners.success(entry.section == .discovery ? "Included \(entry.label) in search" : "Connected \(entry.label)")
+                    banners.success("Connected \(entry.label)")
                 }
             } catch {
                 banners.error(error.localizedDescription)

@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 @testable import Heartable
 
 final class ProviderDiscoveryTests: XCTestCase {
@@ -8,11 +9,15 @@ final class ProviderDiscoveryTests: XCTestCase {
         }
         XCTAssertEqual(ProviderCatalog.entry(.spotify)?.section, .library)
         XCTAssertEqual(ProviderCatalog.entry(.apple)?.section, .library)
-        XCTAssertEqual(ProviderCatalog.entry(.listenbrainz)?.section, .history)
+        XCTAssertNil(ProviderCatalog.entry(.listenbrainz))
+        XCTAssertNil(ProviderCatalog.entry(.mixcloud))
+        XCTAssertNil(ProviderCatalog.entry(.radioBrowser))
         if ProviderCatalog.entry(.lastfm)?.status == .live {
             XCTAssertEqual(ProviderCatalog.entry(.lastfm)?.section, .history)
         }
-        XCTAssertEqual(ProviderCatalog.entry(.radioBrowser)?.section, .discovery)
+        XCTAssertEqual(ProviderCatalog.entry(.wsum)?.section, .discovery)
+        XCTAssertEqual(ProviderCatalog.entries(in: .library).map(\.id), [.apple, .spotify, .plex, .jellyfin])
+        XCTAssertEqual(ProviderCatalog.publicSearchIDs, [.audius, .deezer, .internetArchive, .wsum])
     }
 
     func testWSUMSearchIsSpecificAndStable() {
@@ -30,11 +35,48 @@ final class ProviderDiscoveryTests: XCTestCase {
         let start = Date(timeIntervalSince1970: 0)
         for second in stride(from: 0, through: 120, by: 5) {
             let now = PlayerStore.Now(
-                source: .radioBrowser, name: "WSUM 91.7 FM", artist: "WSUM",
+                source: .wsum, name: "WSUM 91.7 FM", artist: "WSUM",
                 artworkURL: nil, isPlaying: true, positionMs: second * 1_000,
-                durationMs: 0, uri: "radio_browser:track:wsum-fm", providerTrackID: "wsum-fm"
+                durationMs: 0, uri: "wsum:track:wsum-fm", providerTrackID: "wsum-fm"
             )
             XCTAssertFalse(tracker.observe(now: now, ghost: false, at: start.addingTimeInterval(Double(second))))
+        }
+    }
+
+    func testPublicSourcesNeverBecomeAccountConnectionsOrPersonalStats() async {
+        for id in ProviderCatalog.publicSearchIDs {
+            let entry = ProviderCatalog.entry(id)!
+            XCTAssertFalse(entry.requiresAccountConnection)
+            XCTAssertFalse(entry.capabilities.contains(.top))
+            let provider = ProviderRegistry.provider(for: id)
+            let available = await provider.isConnected()
+            let personalTop = await provider.topTracks(range: .longTerm, limit: 25)
+            XCTAssertTrue(available)
+            XCTAssertTrue(personalTop.isEmpty)
+        }
+    }
+
+    func testSearchStartsWithLibrariesAndSupportsExplicitMultiSelection() {
+        var scope = LibrarySearchScope()
+        let connected: Set<ProviderID> = [.spotify, .apple]
+        XCTAssertEqual(scope.resolved(connected: connected), [.heartable, .spotify, .apple])
+        scope.toggle(.wsum, connected: connected)
+        scope.toggle(.audius, connected: connected)
+        XCTAssertEqual(scope.resolved(connected: connected), [.heartable, .spotify, .apple, .wsum, .audius])
+        scope.toggle(.apple, connected: connected)
+        XCTAssertFalse(scope.resolved(connected: connected).contains(.apple))
+        XCTAssertEqual(scope.resolved(connected: []), [.heartable, .wsum, .audius])
+        scope.selection = []
+        XCTAssertTrue(scope.resolved(connected: connected).isEmpty)
+    }
+
+    @MainActor
+    func testProviderMenuUsesInstalledHeartableIconAndRealServiceAssets() {
+        for choice in AppIconCatalog.choices {
+            XCTAssertEqual(ProviderLogo.assetName(for: .heartable, heartableIconKey: choice.id), choice.previewAssetName)
+        }
+        for id in [.apple, .spotify, .plex, .jellyfin] + ProviderCatalog.publicSearchIDs {
+            XCTAssertNotNil(UIImage(named: ProviderLogo.assetName(for: id, heartableIconKey: "core")))
         }
     }
 }

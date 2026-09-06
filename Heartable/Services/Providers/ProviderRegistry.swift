@@ -26,8 +26,8 @@ enum ProviderRegistry {
     }
 
     static func connected() async -> [MusicProvider] {
-        // Catalog-live only: greyed services never feed the unified library.
-        let live = all.filter { ProviderCatalog.entry($0.id)?.status == .live }
+        // Public catalogs are search sources, never personal libraries or stats.
+        let live = all.filter { ProviderCatalog.entry($0.id)?.requiresAccountConnection == true }
         // Probe concurrently, gather the connected ids, then rebuild in catalog order.
         let connectedIDs = await withTaskGroup(of: ProviderID?.self) { group -> Set<ProviderID> in
             for p in live {
@@ -40,5 +40,14 @@ enum ProviderRegistry {
             return ids
         }
         return live.filter { connectedIDs.contains($0.id) }
+    }
+
+    static func searchable() async -> [MusicProvider] {
+        let connectedIDs = Set(await connected().map(\.id))
+        return all.filter {
+            guard let entry = ProviderCatalog.entry($0.id),
+                  entry.status == .live, entry.capabilities.contains(.search) else { return false }
+            return entry.isPublicSearch || connectedIDs.contains($0.id)
+        }
     }
 }

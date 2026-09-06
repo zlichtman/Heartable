@@ -112,6 +112,14 @@ disconnect or account deletion is what removes durable state.
 capabilities, setup text, playback tier, and transport route. A provider must
 never claim a capability its public API cannot deliver.
 
+Only Apple Music, Spotify, Plex, and Jellyfin are library connections. Last.fm,
+when configured, is a separate history connection. Audius, Deezer, Internet
+Archive, and WSUM are always-available public search adapters, not pairings.
+Never include public charts in library hydration, account restoration, or stats.
+Search defaults to Heartable + connected libraries; public sources require an
+explicit multi-selection. Preserve selected sources across query changes, and
+reset them with the account shell. Search choices do not change account pairings.
+
 All provider content normalizes into `UnifiedTrack`, `UnifiedPlaylist`, and
 related shared models. Track identity must deduplicate the same recording across
 services without merging unrelated editions.
@@ -143,6 +151,8 @@ short Connect-device propagation gap, not authentication failures.
 `PlaybackQueue` identifies occurrences, not just URIs. Shuffle must install the
 whole selected queue, not merely choose a random first song. Queue ordering is
 owned by Heartable; disable inherited native shuffle/repeat when installing it.
+Spotify control calls target the device that received Play and verify both
+settings by readback; Spotify does not guarantee cross-endpoint execution order.
 Preserve position and pause state when changing modes. Do not briefly start a
 paused Spotify song just to update its queue: defer installation until Play.
 Native queues contain one provider at a time; mixed-provider boundaries require
@@ -182,8 +192,14 @@ Playlist detail alone enables landscape rotation for a song-cover browser: one
 card per track occurrence, in the selected list order (not grouped by album).
 Retain the portrait list and its scroll position while browsing covers. Reuse
 the existing artwork cache and playback router; rotation never starts a sync.
-The landscape presentation is a packed vinyl shelf with stable-width scroll
-targets, a pulled-forward selected sleeve, and one shared track/play caption.
+The landscape presentation is a two-sided cover-flow shelf with stable-width
+scroll targets and a side caption, sized inside the native chrome's content
+area. Never wrap the entire shelf in a vertical scroller with a full-page
+minimum height: it lets the player overlap the selected cover. Compare sleeve
+and viewport geometry in the same coordinate space; scroll-content margins
+change the built-in scroll coordinate origin. First/last targets must center.
+Playlist Play lives opposite Back; in landscape it starts the selected song
+with the whole playlist queue. Do not add a second play action to the caption.
 
 Backup names are local date and time only by default, persisted at
 capture time, and editable through Rename in the backup actions drawer. Never
@@ -209,6 +225,13 @@ snapshots, since absence cannot prove deletion from that service.
 
 A listen is an actual qualified play, not library presence, album metadata, or
 a provider import. Keep scopes explicit:
+
+Onboarding's Spotify recent-history import uses `provider_play_history`, not
+`play_log`. The account marker and at-most-50 rows commit atomically. RLS keeps
+them private, and no friend activity/Heartable totals are generated. Import and
+clear operations serialize on the same profile row so a late import cannot undo
+a deliberate clear. Failed imports leave the marker unset for retry; never
+silently substitute top rankings or library contents for recent play events.
 
 - **Heartable**: qualified plays observed by Heartable
 - **Spotify**: Spotify-specific source data where the API exposes it

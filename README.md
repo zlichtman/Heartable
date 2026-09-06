@@ -28,7 +28,7 @@ name.
 ## Current release
 
 - Marketing version: **1.0.0**
-- Build: **50**
+- Build: **52**
 - Minimum OS: **iOS 26**
 - Toolchain: **Swift 6**, SwiftUI, XcodeGen, Swift Package Manager
 - Backend: **Supabase**
@@ -101,7 +101,7 @@ do not remove provider restrictions or replace physical-device beta checks.
 
 Services now separate connected music libraries, listening-history sources, and
 search/radio catalogs, with one Coming soon group for unimplemented adapters.
-WSUM's three stations are included in Radio search. The first usable library
+WSUM's three stations are available as an optional search source. The first usable library
 gets an automatic backup; subsequent backups honor the chosen cadence. New
 backup names are date/time only and can be renamed from the actions drawer.
 Clearing music data uses an account-checked database transaction, repairs
@@ -120,6 +120,27 @@ palettes and edits. Appearance is stored separately from private widget content,
 so signing out clears listening data without resetting the widget's colors.
 Theme changes request a WidgetKit timeline refresh; iOS controls refresh timing
 and its tinted/clear Home Screen and Lock Screen rendering modes.
+
+Build 52 refines landscape vinyl browsing: a centered sleeve with balanced
+perspective on either side, a separate track caption, and no shelf content under
+the mini-player. The first/last songs center correctly. Playlist Play stays in
+the top-right navigation slot; in vinyl mode it begins at the selected song.
+
+Music providers are Apple Music, Spotify, Plex, and Jellyfin. Audius, Deezer
+(previews), Internet Archive, and WSUM appear as logo-only public search sources;
+they never become account pairings or contribute chart data to personal stats.
+ListenBrainz, Mixcloud, and the general Radio Browser adapter have been removed.
+Search defaults to Heartable plus connected libraries. Its themed source drawer
+supports multiple selections, with public catalogs/radio opt-in and real service
+logos, including the installed Heartable icon.
+
+Spotify onboarding imports up to 50 provider-reported recent plays, once per
+account, without delaying entry into the app. These private history rows are
+marked Spotify and stay separate from Heartable-observed counts and friend
+activity. Clearing history also prevents an in-flight import from restoring it.
+An existing Spotify connection needs reconnecting to grant the new recent-history
+scope. Queue installation now verifies native Shuffle/Repeat state on the device
+that received Play instead of assuming accepted commands finished in order.
 
 Account-owned state is namespaced by the Supabase user. Provider pairing intent
 is stored in an RLS-protected account manifest, while provider secrets remain in

@@ -14,6 +14,9 @@ struct PlaybackQueue {
     var current: UnifiedTrack? { entries.indices.contains(index) ? entries[index].track : nil }
     var hasNext: Bool { index + 1 < entries.count }
     var hasPrevious: Bool { index > 0 }
+    var isAtProviderBoundary: Bool {
+        hasNext && entries[index + 1].track.providerID != current?.providerID
+    }
     var remaining: [UnifiedTrack] { entries.dropFirst(index).map(\.track) }
 
     init(tracks: [UnifiedTrack] = [], startingAt: Int? = nil,

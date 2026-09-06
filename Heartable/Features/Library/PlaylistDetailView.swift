@@ -1,11 +1,7 @@
 import SwiftUI
 
-/// Inside-a-playlist view, laid out like Spotify: a large centered cover at the
-/// top, the name + description + owner centered beneath it, and a circular Play
-/// button anchored top-right of a controls row. The hero scrolls away with the
-/// list (it's the List's first section). Shuffle mode is whatever's active in
-/// `prefs`; the Play button plays the first track in that order. Ported from the
-/// RN LibraryPlaylistScreen.
+/// Cache-backed playlist list and landscape sleeve browser. The primary Play
+/// action stays in the navigation bar opposite Back in either orientation.
 struct PlaylistDetailView: View {
     @Environment(ThemeStore.self) private var theme
     @Environment(PlayerStore.self) private var player
@@ -104,6 +100,29 @@ struct PlaylistDetailView: View {
                 PlaylistCoverBrowser(tracks: displayedTracks, selection: $coverSelection)
             }
         }
+        .navigationTitle(playlist.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text(playlist.name)
+                    .font(Typography.semibold(15))
+                    .foregroundStyle(theme.palette.text)
+                    .lineLimit(1)
+                    .opacity(showBarTitle || isLandscape ? 1 : 0)
+                    .animation(.easeInOut(duration: 0.18), value: showBarTitle)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { Task { await playAll() } } label: {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 18, weight: .semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .tint(theme.palette.rose)
+                .disabled(loading || tracks.isEmpty)
+                .accessibilityLabel(isLandscape ? "Play selected song" : "Play playlist")
+                .accessibilityIdentifier("playlist.playAll")
+            }
+        }
         .onGeometryChange(for: Bool.self) { geometry in
             geometry.size.width > geometry.size.height
         } action: { landscape in
@@ -164,6 +183,7 @@ struct PlaylistDetailView: View {
 
                     ForEach(Array(displayedTracks.enumerated()), id: \.offset) { index, track in
                         UnifiedTrackRow(track: track, rank: index + 1) {
+                            coverSelection = index
                             Task { await player.play(tracks: displayedTracks, startingAt: index,
                                                      mode: prefs.mode, weights: prefs.weights) }
                         }
@@ -186,21 +206,6 @@ struct PlaylistDetailView: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(theme.palette.bg.ignoresSafeArea())
-        .navigationTitle(playlist.name)
-        .navigationBarTitleDisplayMode(.inline)
-        // While the hero (cover + name) is on screen the bar stays quiet; once
-        // it scrolls under the bar, the name fades into the glass nav so the
-        // back arrow never floats over bare content.
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(playlist.name)
-                    .font(Typography.semibold(15))
-                    .foregroundStyle(theme.palette.text)
-                    .lineLimit(1)
-                    .opacity(showBarTitle || isLandscape ? 1 : 0)
-                    .animation(.easeInOut(duration: 0.18), value: showBarTitle)
-            }
-        }
         .onScrollGeometryChange(for: Bool.self) { geo in
             geo.contentOffset.y + geo.contentInsets.top > 300
         } action: { _, past in
@@ -336,15 +341,6 @@ struct PlaylistDetailView: View {
             }
             Spacer(minLength: 4)
             sortMenu
-            Button(action: { Task { await playAll() } }) {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(.white)
-                    .frame(width: 52, height: 52)
-                    .background(Circle().fill(theme.palette.rose))
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Play all")
         }
     }
 
@@ -385,6 +381,10 @@ struct PlaylistDetailView: View {
     private func playAll() async {
         guard !tracks.isEmpty else { return }
         sortStore.recordPlayed(playlist.key)   // powers the Library "Recent" sort
-        await player.play(tracks: displayedTracks, mode: prefs.mode, weights: prefs.weights)
+        if isLandscape, let index = VinylShelfLayout.validSelection(coverSelection, count: displayedTracks.count) {
+            await player.play(tracks: displayedTracks, startingAt: index, mode: prefs.mode, weights: prefs.weights)
+        } else {
+            await player.play(tracks: displayedTracks, mode: prefs.mode, weights: prefs.weights)
+        }
     }
 }

@@ -2,7 +2,7 @@ import Foundation
 
 /// Curated public station endpoints from WSUM's official web player, verified
 /// 2026-09-05. Stored IDs are stable; playback never trusts a shared track URL.
-/// These are stations within Radio, not pretend account-based music services.
+/// WSUM is a public search source, not an account connection.
 enum FeaturedRadioStations {
     struct Station: Sendable {
         let id: String
@@ -10,8 +10,8 @@ enum FeaturedRadioStations {
         let stream: URL
 
         var track: UnifiedTrack {
-            UnifiedTrack(key: trackKey(.radioBrowser, id), providerID: .radioBrowser,
-                         providerTrackID: id, uri: "radio_browser:track:\(id)", name: name,
+            UnifiedTrack(key: trackKey(.wsum, id), providerID: .wsum,
+                         providerTrackID: id, uri: "wsum:track:\(id)", name: name,
                          artists: [.init(id: "wsum", name: "WSUM · Madison, Wisconsin")],
                          album: nil,
                          albumArt: URL(string: "https://wsum.org/wp-content/frontity/build/static/images/WSUM%20Placeholder%20Logo%20Colored-7f2b339e6e2154611252cadf6ffd3d1f.png"),

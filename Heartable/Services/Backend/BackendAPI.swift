@@ -619,8 +619,8 @@ struct BackendAPI: Sendable {
 
     // MARK: - Play history & leaderboards
 
-    func fetchPlayHistory(limit: Int = 100) async -> [PlayEntryDTO] {
-        guard let uid = await myUID() else { return [] }
+    func fetchPlayHistory(limit: Int = 100, userID: UUID? = nil) async -> [PlayEntryDTO] {
+        guard let uid = await myUID(expected: userID) else { return [] }
         let rows: [PlayEntryDTO] = (try? await client
             .from("play_log")
             .select("id, track_uri, track_name, artist, duration_ms, played_at, album_art")
@@ -679,10 +679,7 @@ struct BackendAPI: Sendable {
 
     func clearPlayHistory() async throws {
         guard let uid = await myUID() else { return }
-        try await client.from("play_log")
-            .delete()
-            .eq("user_id", value: uid.uuidString)
-            .execute()
+        try await client.rpc("clear_my_listening_history", params: ["expected_owner": uid.uuidString]).execute()
     }
 
     // MARK: - Friend activity

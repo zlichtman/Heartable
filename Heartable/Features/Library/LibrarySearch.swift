@@ -34,38 +34,41 @@ struct LibrarySearchResultsView: View {
     let localPlaylists: [UnifiedPlaylist]
 
     @State private var selectedType: LibrarySearchResultType = .all
-    @State private var selectedProvider: ProviderID?
     @State private var showingProviderPicker = false
 
     private var results: MasterLibraryStore.SearchResults { master.searchResults }
-    private var providerFilteredTracks: [MasterTrack] {
-        guard let selectedProvider else { return results.tracks }
-        return results.tracks.filter { $0.providerSet.contains(selectedProvider) }
+    private var selectedProviders: Set<ProviderID> {
+        master.searchScope.resolved(connected: Set(connectedProviderIDs))
     }
     private var providerProjectedTracks: [MasterTrack] {
-        guard let selectedProvider else { return results.tracks }
-        return MasterTrack.group(
-            results.tracks.compactMap { $0.source(for: selectedProvider) }
-        )
+        // Project sources inside each already-ranked result. Regrouping the
+        // entire list through a dictionary would scramble relevance on every tap.
+        results.tracks.compactMap { track in
+            let sources = track.sources.filter { selectedProviders.contains($0.providerID) }
+            return sources.isEmpty ? nil : MasterTrack(identity: track.identity, sources: sources)
+        }
     }
     private var tracks: [MasterTrack] {
         guard selectedType == .all || selectedType == .songs else { return [] }
-        return providerFilteredTracks
+        return providerProjectedTracks
     }
     private var artists: [MasterArtist] {
         guard selectedType == .all || selectedType == .artists else { return [] }
-        guard selectedProvider != nil else { return results.artists }
-        return MasterArtist.aggregate(providerProjectedTracks)
+        return MasterLibraryStore.rankArtists(providerProjectedTracks, query: master.searchTerm)
     }
     private var playlists: [UnifiedPlaylist] {
         guard selectedType == .all || selectedType == .playlists else { return [] }
-        guard let selectedProvider else { return results.playlists }
-        return results.playlists.filter { $0.providerID == selectedProvider }
+        return results.playlists.filter { selectedProviders.contains($0.providerID) }
     }
     private var profiles: [FoundProfileDTO] {
-        guard selectedType == .all || selectedType == .profiles else { return [] }
-        guard selectedProvider == nil || selectedProvider == .heartable else { return [] }
+        guard selectedType == .all || selectedType == .profiles,
+              selectedProviders.contains(.heartable) else { return [] }
         return results.people
+    }
+    private var sourceLabel: String {
+        if master.searchScope.selection == nil { return "Libraries" }
+        if selectedProviders.count == 1, let id = selectedProviders.first { return providerName(id) }
+        return "\(selectedProviders.count) apps"
     }
     private var filteredIsEmpty: Bool {
         tracks.isEmpty && artists.isEmpty && playlists.isEmpty && profiles.isEmpty
@@ -84,7 +87,8 @@ struct LibrarySearchResultsView: View {
     }
     private var filterProviders: [ProviderID] {
         var seen: Set<ProviderID> = [.heartable]
-        return [.heartable] + connectedProviderIDs.filter { seen.insert($0).inserted }
+        return [.heartable] + (connectedProviderIDs + ProviderCatalog.publicSearchIDs)
+            .filter { seen.insert($0).inserted }
     }
     private var filterColumns: [GridItem] {
         let count = dynamicTypeSize.isAccessibilitySize ? 2 : 3
@@ -107,28 +111,18 @@ struct LibrarySearchResultsView: View {
                 }
             }
         }
-        .onChange(of: connectedProviderIDs) {
-            guard let selectedProvider,
-                  !filterProviders.contains(selectedProvider) else { return }
-            self.selectedProvider = nil
-        }
-        .onChange(of: selectedProvider) {
-            master.setSearch(
-                master.searchTerm,
-                localPlaylists: localPlaylists,
-                providerFilter: selectedProvider
-            )
+        .onChange(of: selectedProviders) {
+            master.setSearch(master.searchTerm, localPlaylists: localPlaylists)
         }
         .sheet(isPresented: $showingProviderPicker) {
             HeartableChoiceSheet(
                 title: "Search in",
                 items: providerFilterItems,
+                dismissOnSelection: false,
                 onCancel: { showingProviderPicker = false },
                 onSelect: { item in
-                    selectedProvider = item.id == "all"
-                        ? nil
-                        : ProviderID(rawValue: item.id)
-                    showingProviderPicker = false
+                    guard let id = ProviderID(rawValue: item.id) else { return }
+                    master.searchScope.toggle(id, connected: Set(connectedProviderIDs))
                 }
             )
         }
@@ -144,10 +138,10 @@ struct LibrarySearchResultsView: View {
                 showingProviderPicker = true
             } label: {
                 HStack(spacing: 6) {
-                    if let selectedProvider {
-                        ProviderBadge(id: selectedProvider, size: 17)
+                    if selectedProviders.count == 1, let id = selectedProviders.first {
+                        ProviderLogo(id: id, size: 17)
                     }
-                    Text(selectedProvider.map(providerName) ?? "All apps")
+                    Text(sourceLabel)
                         .font(Typography.semibold(12))
                         .lineLimit(1)
                     Image(systemName: "chevron.down")
@@ -161,26 +155,20 @@ struct LibrarySearchResultsView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Filter by app")
-            .accessibilityValue(selectedProvider.map(providerName) ?? "All apps")
+            .accessibilityValue(filterProviders.filter { selectedProviders.contains($0) }.map(providerName).joined(separator: ", "))
         }
         .padding(.horizontal, 16)
         .padding(.bottom, 8)
     }
 
     private var providerFilterItems: [HeartableChoiceItem] {
-        [
-            HeartableChoiceItem(
-                id: "all",
-                icon: "square.grid.2x2.fill",
-                title: "All apps",
-                isSelected: selectedProvider == nil
-            ),
-        ] + filterProviders.map { provider in
+        filterProviders.map { provider in
             HeartableChoiceItem(
                 id: provider.rawValue,
-                icon: ProviderCatalog.entry(provider)?.sfSymbol ?? "music.note",
+                icon: "music.note",
                 title: providerName(provider),
-                isSelected: selectedProvider == provider
+                isSelected: selectedProviders.contains(provider),
+                providerID: provider
             )
         }
     }
@@ -235,7 +223,7 @@ struct LibrarySearchResultsView: View {
                         MasterTrackRow(
                             track: track,
                             providerOrder: providerOrder,
-                            preferredProvider: selectedProvider
+                            preferredProvider: selectedProviders.count == 1 ? selectedProviders.first : nil
                         )
                     }
                 }
@@ -305,8 +293,10 @@ struct LibrarySearchResultsView: View {
 
     @ViewBuilder
     private var empty: some View {
-        if master.searchedWithNoProviders {
-            emptyText("Connect a music service to search across your apps.")
+        if selectedProviders.isEmpty {
+            emptyText("Choose an app in Search in.")
+        } else if master.searchedWithNoProviders && selectedType != .profiles {
+            emptyText("No matches. Add a search source or connect a music service.")
         } else {
             emptyText("No matches")
         }
@@ -370,9 +360,6 @@ struct LibrarySearchResultsView: View {
         let artistKey = UnifiedTrackIdentity.normalizeArtist(artist.name)
         let sources = providerProjectedTracks
             .compactMap { master -> UnifiedTrack? in
-                if let selectedProvider {
-                    return master.source(for: selectedProvider)
-                }
                 return master.bestPlaybackSource(order: providerOrder) ?? master.display
             }
             .filter { track in

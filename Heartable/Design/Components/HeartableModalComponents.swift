@@ -13,6 +13,7 @@ struct HeartableChoiceItem: Identifiable {
     var isSelected = false
     var isDestructive = false
     var isDisabled = false
+    var providerID: ProviderID? = nil
 }
 
 /// Standard presentation chrome. It keeps every Heartable-owned drawer on the
@@ -26,7 +27,9 @@ private struct HeartableSheetChrome: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .presentationBackground(theme.palette.bg)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background { theme.palette.bg.ignoresSafeArea(.container) }
+            .presentationBackground { theme.palette.bg.ignoresSafeArea(.container) }
             .presentationCornerRadius(30)
             .presentationDragIndicator(dragIndicator)
             .accessibilityAction(.escape) { dismiss() }
@@ -52,6 +55,7 @@ struct HeartableDrawer<Content: View>: View {
                 }
         }
         .scrollIndicators(.hidden)
+        .scrollEdgeEffectHidden()
         .scrollBounceBehavior(.basedOnSize)
         .background(theme.palette.bg.ignoresSafeArea())
         // iPhone bottom sheets need an explicit detent. The system clamps it to
@@ -78,6 +82,7 @@ struct HeartableChoiceSheet: View {
     let title: String
     var subtitle: String? = nil
     let items: [HeartableChoiceItem]
+    var dismissOnSelection = true
     let onCancel: () -> Void
     let onSelect: (HeartableChoiceItem) -> Void
 
@@ -106,10 +111,14 @@ struct HeartableChoiceSheet: View {
                 ForEach(items) { item in
                     Button {
                         onSelect(item)
-                        dismiss()
+                        if dismissOnSelection { dismiss() }
                     } label: {
                         HStack(spacing: 12) {
-                            RoundedRectangle(cornerRadius: 10)
+                            if let providerID = item.providerID {
+                                ProviderLogo(id: providerID, size: 40)
+                                    .accessibilityHidden(true)
+                            } else {
+                                RoundedRectangle(cornerRadius: 10)
                                 .fill(
                                     item.isDestructive
                                         ? theme.palette.danger.opacity(0.12)
@@ -126,6 +135,7 @@ struct HeartableChoiceSheet: View {
                                         )
                                 }
                                 .accessibilityHidden(true)
+                            }
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.title)
@@ -143,10 +153,10 @@ struct HeartableChoiceSheet: View {
                                 }
                             }
                             Spacer(minLength: 8)
-                            if item.isSelected {
-                                Image(systemName: "checkmark.circle.fill")
+                            if item.isSelected || !dismissOnSelection {
+                                Image(systemName: item.isSelected ? "checkmark.circle.fill" : "circle")
                                     .font(.system(size: 18, weight: .semibold))
-                                    .foregroundStyle(theme.palette.rose)
+                                    .foregroundStyle(item.isSelected ? theme.palette.rose : theme.palette.textMuted)
                                     .accessibilityHidden(true)
                             }
                         }

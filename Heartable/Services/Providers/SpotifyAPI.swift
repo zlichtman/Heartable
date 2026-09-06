@@ -155,6 +155,13 @@ enum SpotifyAPI {
 
     // MARK: - Player
 
+    static func recentlyPlayed(token: String) async throws -> [SpotifyRecentPlay] {
+        let response: SpotifyRecentHistory = try await getJSON(
+            "/me/player/recently-played?limit=50", token: token
+        )
+        return response.items ?? []
+    }
+
     /// Result of a playback-state poll, including the rate-limit signal so the
     /// caller can back off instead of hammering the API into a longer 429.
     enum PlaybackPoll: Sendable {
@@ -249,13 +256,14 @@ enum SpotifyAPI {
     /// Start/resume playback. Retries and, on 404/502 (no active device), picks a
     /// device, transfers to it, and retries. Throws `NoActiveDeviceError` when no
     /// Connect device exists, or a user-facing `ProviderError` on other failures.
+    @discardableResult
     static func play(
         token: String,
         uris: [String]? = nil,
         contextUri: String? = nil,
         deviceId: String? = nil,
         positionMs: Int? = nil
-    ) async throws {
+    ) async throws -> String? {
         var body: [String: Any] = [:]
         if let uris { body["uris"] = uris }
         if let contextUri { body["context_uri"] = contextUri }
@@ -282,7 +290,7 @@ enum SpotifyAPI {
                 throw ProviderError("Couldn't reach Spotify playback.")
             }
 
-            if (200..<300).contains(resp.statusCode) || resp.statusCode == 204 { return }
+            if (200..<300).contains(resp.statusCode) || resp.statusCode == 204 { return device }
 
             if (resp.statusCode == 404 || resp.statusCode == 502), attempt < 3 {
                 if device == nil {
@@ -486,11 +494,15 @@ struct PlaybackState: Decodable, Sendable {
     let progressMs: Int?
     let device: SpotifyDevice?
     let item: SpotifyTrack?
+    let shuffleState: Bool?
+    let repeatState: String?
 
     private enum CodingKeys: String, CodingKey {
         case device, item
         case isPlaying = "is_playing"
         case progressMs = "progress_ms"
+        case shuffleState = "shuffle_state"
+        case repeatState = "repeat_state"
     }
 }
 

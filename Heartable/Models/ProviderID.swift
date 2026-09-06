@@ -18,6 +18,8 @@ enum ProviderID: String, CaseIterable, Sendable, Codable, Identifiable {
     case qobuz
     case pandora
     case internetArchive = "internet_archive"
+    case wsum
+    // Retired identifiers remain decodable in saved tracks, but have no adapter.
     case radioBrowser = "radio_browser"
     case listenbrainz
     case mixcloud
@@ -26,6 +28,8 @@ enum ProviderID: String, CaseIterable, Sendable, Codable, Identifiable {
     case heartable
 
     var id: String { rawValue }
+
+    var isLiveRadio: Bool { self == .wsum || self == .radioBrowser }
 
     /// Sources whose audio runs through the in-app `LocalAudioEngine` (vs. the
     /// Spotify Connect device or MusicKit's player). Transport routing keys off

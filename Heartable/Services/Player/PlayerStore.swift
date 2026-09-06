@@ -148,6 +148,7 @@ final class PlayerStore {
         let previousAppleEntryID = lastAppleEntryID
         let elapsed = Date().timeIntervalSince(lastObservationAt)
         var spotifyIdle = false
+        var spotifyState: PlaybackState?
 
         // In-app engine (fully under our control).
         let engine = LocalAudioEngine.shared
@@ -182,6 +183,7 @@ final class PlayerStore {
                     )
                     retainPreviousSpotify(previousNow, in: &candidates)
                 case .state(let state):
+                    spotifyState = state
                     spotifyBackoffUntil = nil
                     spotifyFailureRetention.reset()
                     if let item = state.item {
@@ -299,12 +301,14 @@ final class PlayerStore {
         // Native queues play through within one provider, even in the background.
         // When a mixed queue reaches its boundary, advance only on an end signal,
         // never on a normal pause or a transient polling error.
-        if startingTrackKey == nil, !userPaused, queue.hasNext,
+        if startingTrackKey == nil, !userPaused, queue.isAtProviderBoundary,
            let previousNow, previousNow.isPlaying,
            previousNow.uri == queue.current?.uri,
            previousNow.durationMs > 0,
            Double(previousNow.positionMs) + min(elapsed, 10) * 1_000 >= Double(previousNow.durationMs - 500),
-           (previousNow.source == .spotify && spotifyIdle)
+           (previousNow.source == .spotify && SpotifyQueueOrder.didFinishSegment(
+                previous: previousNow, state: spotifyState, wasIdle: spotifyIdle, elapsed: elapsed
+           ))
             || (previousNow.source == .apple && ApplicationMusicPlayer.shared.state.playbackStatus == .stopped) {
             Task { [weak self] in
                 guard let self, self.playRequestID == playbackRevision else { return }
@@ -468,16 +472,14 @@ final class PlayerStore {
 
     private func installSpotifyQueue(_ tracks: [UnifiedTrack], token: String,
                                      deviceID: String? = nil, positionMs: Int = 0) async throws {
-        try await SpotifyAPI.play(token: token, uris: tracks.map(\.uri),
-                                  deviceId: deviceID, positionMs: positionMs)
+        let resolvedDevice = try await SpotifyAPI.play(token: token, uris: tracks.map(\.uri),
+                                                       deviceId: deviceID, positionMs: positionMs)
         // Heartable has already ordered the queue, including weighted shuffle.
         // Inherited Spotify shuffle/repeat must not reorder or loop that queue.
-        do {
-            try await SpotifyAPI.control("/me/player/shuffle?state=false", token: token)
-            try await SpotifyAPI.control("/me/player/repeat?state=off", token: token)
-        } catch {
-            try Task.checkCancellation()
-            showFeedback("Playback started, but Spotify couldn’t apply the queue order. Try the playback mode again.")
+        let confirmed = try await SpotifyQueueOrder.configure(token: token, deviceID: resolvedDevice ?? deviceID)
+        try Task.checkCancellation()
+        if !confirmed {
+            showFeedback("Spotify started playing, but hasn’t confirmed Shuffle and Repeat are off. Reapply the playback mode to retry.")
         }
     }
 

@@ -59,7 +59,7 @@ Test on a physical iPhone using the exact processed TestFlight binary:
       start; only the final requested song may play. Test a failed Spotify pause,
       expired direct-stream URL, network outage, and audio interruption/recovery.
 - [ ] Deezer is a preview route, not full-song playback. Audius, Internet Archive,
-      Radio Browser, Plex and Jellyfin use the direct-stream engine; verify each
+      WSUM, Plex and Jellyfin use the direct-stream engine; verify each
       connected service with real playable content, not only simulator fixtures.
 - [ ] A provider outage leaves the last coherent cached library visible and
       gives actionable native notification feedback.
@@ -99,6 +99,12 @@ registration to an unrestricted public cohort.
 
 ## External beta smoke test
 
+- [ ] Rotate a playlist with the mini-player visible and without playback. The
+      selected sleeve and side caption remain above the native bottom chrome;
+      first/last songs center, scrolling tilts both sides smoothly, and rotating
+      back preserves list position. Check a compact iPhone, Reduce Motion, long
+      track names, and repeat rotations. Play opposite Back starts the selected
+      vinyl song with the full ordered/shuffled/weighted playlist queue.
 - [ ] On a fresh account, connecting the first usable library creates one
       automatic backup even with manual cadence. Empty/offline sources do not
       create empty backups; reconnect and confirm retry succeeds.
@@ -108,8 +114,16 @@ registration to an unrestricted public cohort.
       and while a track is playing. Confirm snapshots/owned mixtapes/history
       disappear, provider pairings/profile/friends remain, and reopening does
       not recreate the first backup. Never run this test on a real library.
-- [ ] Search WSUM with Radio included; verify FM, Freeflow, and Sports stream
+- [ ] Search defaults to connected libraries; multi-select WSUM and another
+      public catalog, change the query, and confirm source choices stay selected.
+      Verify the drawer uses the installed Heartable icon and stays fully themed.
+- [ ] Search WSUM with WSUM selected; verify FM, Freeflow, and Sports stream
       on a physical device and do not manufacture song-play-count entries.
+- [ ] Fresh Spotify onboarding imports recent history without delaying entry.
+      Reconnect grants `user-read-recently-played`; imported plays are labeled
+      Spotify, do not inflate Heartable stats, and stay deleted after clear/reload.
+- [ ] Start Spotify with native Shuffle/Repeat enabled on two different Connect
+      devices; Heartable disables and verifies both on the targeted device.
 
 - [ ] Install from the public TestFlight link on a device that has never run a
       development build.

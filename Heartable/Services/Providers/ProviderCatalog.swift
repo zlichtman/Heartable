@@ -7,9 +7,9 @@ enum ProviderStatus: Sendable {
 }
 
 enum ProviderSection: String, CaseIterable, Sendable {
-    case library = "Music libraries"
+    case library = "Music providers"
     case history = "Listening history"
-    case discovery = "Search & radio"
+    case discovery = "Search"
     case comingSoon = "Coming soon"
 }
 
@@ -50,11 +50,17 @@ struct ProviderCatalogEntry: Identifiable, Sendable {
     let usesLocalAudioEngine: Bool
     let makeProvider: @Sendable () -> any MusicProvider
 
+    var isPublicSearch: Bool {
+        [.audius, .deezer, .internetArchive, .wsum].contains(id)
+    }
+
+    var requiresAccountConnection: Bool { status == .live && !isPublicSearch }
+
     /// Presentation reflects the implemented integration, not every feature the
     /// upstream service might offer. Public catalogs are not account connections.
     var section: ProviderSection {
         guard status == .live else { return .comingSoon }
-        if id == .lastfm || id == .listenbrainz { return .history }
+        if id == .lastfm { return .history }
         if capabilities.contains(.playlists) || capabilities.contains(.liked) { return .library }
         return .discovery
     }
@@ -98,43 +104,32 @@ enum ProviderCatalog {
               adapter: { SpotifyProvider() }),
         .init(.audius, "Audius", 0x7e1bcc, "infinity",
               "Open music network. Full tracks play right in the app.", .live,
-              caps: [.top, .search, .playback],
+              caps: [.search, .playback],
               url: "https://docs.audius.org/api/",
               playbackTier: .full,
               usesLocalAudioEngine: true,
               adapter: { AudiusProvider() }),
         .init(.deezer, "Deezer", 0xa238ff, "headphones",
-              "Charts and search, 30s previews play in-app.", .live,
-              caps: [.top, .search, .playback],
+              "Public search with 30-second previews in-app.", .live,
+              caps: [.search, .playback],
               url: "https://developers.deezer.com/",
               playbackTier: .preview,
               usesLocalAudioEngine: true,
               adapter: { DeezerProvider() }),
         .init(.internetArchive, "Internet Archive", 0x000000, "building.columns.fill",
               "Open audio archive. Full items play right in the app.", .live,
-              caps: [.top, .search, .playback],
+              caps: [.search, .playback],
               url: "https://archive.org/details/audio",
               playbackTier: .full,
               usesLocalAudioEngine: true,
               adapter: { InternetArchiveProvider() }),
-        .init(.radioBrowser, "Radio Browser", 0x1f8feb, "dot.radiowaves.left.and.right",
-              "Community directory of live internet radio, streamed in-app.", .live,
-              caps: [.top, .search, .playback],
-              url: "https://www.radio-browser.info/",
+        .init(.wsum, "WSUM", 0xc62836, "dot.radiowaves.left.and.right",
+              "Madison’s student radio: 91.7 FM, Freeflow, and Sports, streamed in-app.", .live,
+              caps: [.search, .playback],
+              url: "https://wsum.org/",
               playbackTier: .full,
               usesLocalAudioEngine: true,
-              adapter: { RadioBrowserProvider() }),
-        .init(.listenbrainz, "ListenBrainz", 0xeb743b, "waveform.path.ecg",
-              "Open listening stats from MetaBrainz. Your top recordings by week, month, or all-time.", .live,
-              caps: [.top],
-              steps: ["Tap Connect and enter your ListenBrainz username."],
-              url: "https://listenbrainz.org/",
-              adapter: { ListenBrainzProvider() }),
-        .init(.mixcloud, "Mixcloud", 0x5000ff, "square.stack.3d.up.fill",
-              "DJ mixes, radio shows, and podcasts. Browse popular and search; listen on Mixcloud.", .live,
-              caps: [.top, .search],
-              url: "https://www.mixcloud.com/developers/",
-              adapter: { MixcloudProvider() }),
+              adapter: { WSUMProvider() }),
         // Last.fm lights up the moment LASTFM_API_KEY lands in Secrets; until
         // then it's honestly "needs credentials". The username is typed in-app.
         .init(.lastfm, "Last.fm", 0xd51007, "chart.bar.fill",
@@ -188,6 +183,10 @@ enum ProviderCatalog {
 
     static func entry(_ id: ProviderID) -> ProviderCatalogEntry? {
         all.first { $0.id == id }
+    }
+
+    static var publicSearchIDs: [ProviderID] {
+        all.filter { $0.status == .live && $0.isPublicSearch }.map(\.id)
     }
 
     static func entries(in section: ProviderSection) -> [ProviderCatalogEntry] {

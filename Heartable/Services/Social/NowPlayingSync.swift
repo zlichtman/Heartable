@@ -22,7 +22,7 @@ struct ListeningSessionTracker {
         ghost: Bool,
         at observedAt: Date
     ) -> Bool {
-        guard let now, now.source != .radioBrowser else {
+        guard let now, !now.source.isLiveRadio else {
             session = nil
             return false
         }

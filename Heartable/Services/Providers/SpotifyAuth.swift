@@ -36,6 +36,7 @@ enum SpotifyAuth {
         "user-read-playback-state",
         "user-modify-playback-state",
         "user-read-currently-playing",
+        "user-read-recently-played",
     ].joined(separator: " ")
 
     private static let authorizeURL = "https://accounts.spotify.com/authorize"
