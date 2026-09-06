@@ -19,8 +19,6 @@ final class BackupScheduler {
     private let frequencyKey = "heartable.backup.frequency"
     /// Our own last-successful-run timestamp (epoch seconds).
     private let lastRunKey = "heartable.backups.lastRun"
-    /// Notification opt-in the Notifications screen writes.
-    private let notifyKey = "heartable.notifications.backupComplete"
 
     /// Shared by scheduled captures, manual captures, and CSV imports.
     private(set) var isRunning = false
@@ -124,10 +122,9 @@ final class BackupScheduler {
     /// References `LocalNotifier` directly; it is provided by the notifications
     /// feature and resolves at integration time.
     private func notifyIfEnabled() {
-        let enabled = UserDefaults.standard.object(forKey: notifyKey) as? Bool ?? true
-        guard enabled else { return }
         LocalNotifier.send(title: "Backup complete",
-                           body: "Heartable backed up your library.")
+                           body: "Heartable backed up your library.",
+                           categoryIdentifier: HeartableNotificationCategory.backupComplete.rawValue)
     }
 
     // MARK: - Frequency → interval

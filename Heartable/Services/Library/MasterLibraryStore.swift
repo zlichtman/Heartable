@@ -31,8 +31,9 @@ final class MasterLibraryStore {
         var artists: [MasterArtist] = []
         var playlists: [UnifiedPlaylist] = []
         var people: [FoundProfileDTO] = []
+        var shows: [WSUMShow] = []
         var isEmpty: Bool {
-            tracks.isEmpty && artists.isEmpty && playlists.isEmpty && people.isEmpty
+            tracks.isEmpty && artists.isEmpty && playlists.isEmpty && people.isEmpty && shows.isEmpty
         }
     }
 
@@ -347,6 +348,7 @@ final class MasterLibraryStore {
         searchedWithNoProviders = providers.isEmpty
 
         let shouldFindPeople = selectedIDs.contains(.heartable)
+        async let showsFetch: [WSUMShow] = selectedIDs.contains(.wsum) ? WSUMShows.shared.search(query) : []
         async let peopleFetch: [FoundProfileDTO] = shouldFindPeople
             ? Self.findPeople(query)
             : []
@@ -362,13 +364,15 @@ final class MasterLibraryStore {
         let rankedTracks = Self.rankTracks(merged, query: query)
         let rankedArtists = Self.rankArtists(merged, query: query)
         let people = await peopleFetch
+        let shows = await showsFetch
         if Task.isCancelled { return }
 
         searchResults = SearchResults(
             tracks: rankedTracks,
             artists: rankedArtists,
             playlists: matchingPlaylists,
-            people: Self.rankPeople(people, query: query)
+            people: Self.rankPeople(people, query: query),
+            shows: shows
         )
         searchedWithNoProviders = providers.isEmpty
         searching = false

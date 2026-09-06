@@ -62,40 +62,36 @@ struct PlaylistVinylShelf: View {
     }
 
     private func shelf(layout: VinylShelfLayout, centerX: CGFloat) -> some View {
-        ScrollViewReader { scroll in
-            ScrollView(.horizontal) {
-                LazyHStack(alignment: .center, spacing: layout.spacing) {
-                    ForEach(tracks.indices, id: \.self) { index in
-                        sleeveButton(index: index, layout: layout, centerX: centerX)
-                            .id(index)
-                            .zIndex(index == focusedIndex ? 1_000 : Double(-abs(index - (focusedIndex ?? 0))))
-                    }
+        let anchor = UnitPoint(x: CGFloat(focusedIndex ?? 0) / CGFloat(max(1, tracks.count - 1)), y: 0.5)
+        return ScrollView(.horizontal) {
+            LazyHStack(alignment: .center, spacing: layout.spacing) {
+                ForEach(tracks.indices, id: \.self) { index in
+                    sleeveButton(index: index, layout: layout, centerX: centerX)
+                        .id(index)
+                        .zIndex(index == focusedIndex ? 1_000 : Double(-abs(index - (focusedIndex ?? 0))))
                 }
-                .scrollTargetLayout()
-                .padding(.vertical, 14)
             }
-            // Margins are based on stable scroll targets, not the wider artwork.
-            // The first/last sleeve can therefore land at exactly the same center.
-            .contentMargins(.horizontal, layout.endMargin, for: .scrollContent)
-            .scrollTargetBehavior(.viewAligned)
-            .scrollPosition(id: $selection, anchor: .center)
-            .defaultScrollAnchor(.leading, for: .initialOffset)
-            .defaultScrollAnchor(.center, for: .sizeChanges)
-            .scrollIndicators(.hidden)
-            .scrollClipDisabled()
-            .frame(height: layout.shelfHeight)
-            .background(alignment: .bottom) { shelfLedge }
-            .clipped()
-            .task(id: layout) {
-                // A rotation changes the viewport after the lazy targets mount.
-                // Recenter the retained occurrence without animating from offscreen.
-                await Task.yield()
-                guard !Task.isCancelled, let index = focusedIndex else { return }
-                var transaction = Transaction()
-                transaction.disablesAnimations = true
-                withTransaction(transaction) { scroll.scrollTo(index, anchor: .center) }
-            }
+            .scrollTargetLayout()
+            .padding(.vertical, 14)
         }
+        // Margins are based on stable scroll targets, not the wider artwork.
+        // The first/last sleeve can therefore land at exactly the same center.
+        .contentMargins(.horizontal, layout.endMargin, for: .scrollContent)
+        .scrollTargetBehavior(.viewAligned)
+        .scrollPosition(id: $selection, anchor: .center)
+        .defaultScrollAnchor(anchor, for: .initialOffset)
+        .defaultScrollAnchor(anchor, for: .sizeChanges)
+        .scrollIndicators(.hidden)
+        .scrollClipDisabled()
+        .frame(height: layout.shelfHeight)
+        .background(alignment: .bottom) { shelfLedge }
+        .clipped()
+        // Equal-width targets and symmetric end margins make the selected
+        // occurrence an exact fraction of the scroll range. A new viewport gets
+        // that initial anchor, not the previous viewport's stale pixel offset.
+        // Only this lazy shelf is rebuilt; selection, portrait rows and cache stay.
+        .id(layout)
+        .transaction { $0.animation = nil }
         .accessibilityIdentifier("playlist.vinylShelf")
     }
 

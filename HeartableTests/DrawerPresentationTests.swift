@@ -39,7 +39,7 @@ final class DrawerPresentationTests: XCTestCase {
 private struct DrawerFixture: View {
     @State private var shown = false
     @State private var selected: Set<ProviderID> = [.heartable, .spotify, .apple]
-    private let ids: [ProviderID] = [.heartable, .apple, .spotify, .audius, .deezer, .internetArchive, .wsum]
+    private let ids: [ProviderID] = [.heartable, .apple, .spotify, .audius, .deezer, .wsum]
     var body: some View {
         LinearGradient(colors: [.orange, .blue], startPoint: .top, endPoint: .bottom).ignoresSafeArea()
             .task { shown = true }

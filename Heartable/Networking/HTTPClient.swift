@@ -59,14 +59,15 @@ enum HTTPClient {
         _ url: URL,
         method: String = "GET",
         headers: [String: String] = [:],
-        body: Data? = nil
+        body: Data? = nil,
+        retryRateLimits: Bool = true
     ) async throws -> (Data, HTTPURLResponse) {
         var req = URLRequest(url: url)
         req.httpMethod = method
         req.httpBody = body
         req.timeoutInterval = requestTimeout
         for (k, v) in headers { req.setValue(v, forHTTPHeaderField: k) }
-        let (data, resp) = try await perform(req)
+        let (data, resp) = try await perform(req, retryRateLimits: retryRateLimits)
         return (data, resp as? HTTPURLResponse ?? HTTPURLResponse())
     }
 
@@ -75,7 +76,7 @@ enum HTTPClient {
     /// Issues `req`, retrying up to `maxAttempts` total on HTTP 429/503 (honoring
     /// `Retry-After`) and on transient transport errors, with exponential backoff.
     /// Backoff waits use `Task.sleep`, never wall-clock arithmetic.
-    private static func perform(_ req: URLRequest) async throws -> (Data, URLResponse) {
+    private static func perform(_ req: URLRequest, retryRateLimits: Bool = true) async throws -> (Data, URLResponse) {
         var attempt = 0
         while true {
             try Task.checkCancellation()
@@ -83,7 +84,7 @@ enum HTTPClient {
                 let (data, resp) = try await URLSession.shared.data(for: req)
                 try Task.checkCancellation()
                 if let http = resp as? HTTPURLResponse,
-                   http.statusCode == 429 || http.statusCode == 503,
+                   (http.statusCode == 429 && retryRateLimits) || http.statusCode == 503,
                    attempt < maxAttempts - 1 {
                     let delay = retryAfterDelay(http) ?? backoff(attempt)
                     try await Task.sleep(nanoseconds: nanoseconds(delay))

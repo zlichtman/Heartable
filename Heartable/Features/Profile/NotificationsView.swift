@@ -10,14 +10,17 @@ import UIKit
 /// until an APNs pipeline exists, so the settings never promise a dead control.
 struct NotificationsView: View {
     @Environment(ThemeStore.self) private var theme
-    @Environment(BannerCenter.self) private var banners
     @Environment(\.scenePhase) private var scenePhase
 
-    @AppStorage("heartable.notifications.allow") private var allow = true
-    @AppStorage("heartable.notifications.weeklyLeaderboard") private var weeklyLeaderboard = true
-    @AppStorage("heartable.notifications.backupComplete") private var backupComplete = true
+    @AppStorage(HeartableNotificationPreferences.Key.allow) private var allow = true
+    @AppStorage(HeartableNotificationPreferences.Key.actionUpdates) private var actionUpdates = true
+    @AppStorage(HeartableNotificationPreferences.Key.weeklyReminder) private var weeklyReminder = false
+    @AppStorage(HeartableNotificationPreferences.Key.backupComplete) private var backupComplete = true
+    @AppStorage(HeartableNotificationPreferences.Key.sounds) private var sounds = true
 
     @State private var status: UNAuthorizationStatus = .notDetermined
+    @State private var alertSetting: UNNotificationSetting = .notSupported
+    @State private var soundSetting: UNNotificationSetting = .notSupported
     @State private var requesting = false
 
     /// Categories are live only when the OS has granted permission and the user
@@ -33,16 +36,42 @@ struct NotificationsView: View {
         SettingsScaffold(title: "Notifications") {
             card { permissionRow }
 
-            sectionHeader("Gamification")
+            sectionHeader("Updates")
             card {
-                toggleRow(icon: "trophy.fill", label: "Weekly leaderboard digest",
-                          isOn: $weeklyLeaderboard, disabled: !enabled)
+                VStack(spacing: 0) {
+                    toggleRow(icon: "checkmark.circle.fill", label: "Routine confirmations",
+                              subtitle: "Saves, connections, and completed actions",
+                              isOn: $actionUpdates, disabled: !enabled)
+                    divider
+                    toggleRow(icon: "checkmark.icloud.fill", label: "Automatic backups",
+                              isOn: $backupComplete, disabled: !enabled)
+                    divider
+                    toggleRow(icon: "calendar", label: "Weekly reminder",
+                              subtitle: "Sundays at 6 PM",
+                              isOn: $weeklyReminder, disabled: !enabled)
+                }
             }
 
-            sectionHeader("System")
+            Text("Playback and failed-action alerts stay on while notifications are enabled.")
+                .font(Typography.body(12))
+                .foregroundStyle(theme.palette.textMuted)
+
+            sectionHeader("Delivery")
             card {
-                toggleRow(icon: "checkmark.icloud.fill", label: "Backup complete",
-                          isOn: $backupComplete, disabled: !enabled)
+                VStack(spacing: 0) {
+                    toggleRow(icon: "speaker.wave.2.fill", label: "Sounds",
+                              subtitle: soundSetting == .disabled
+                                  ? "Sounds are off in iOS Settings"
+                                  : "Errors, backups, and reminders",
+                              isOn: $sounds, disabled: !enabled)
+                    divider
+                    Button { openSystemSettings() } label: {
+                        actionRow(icon: "gearshape.fill", label: "iOS Settings",
+                                  subtitle: "Banners, Lock Screen, and Focus",
+                                  trailing: "Open")
+                    }
+                    .buttonStyle(.plain)
+                }
             }
 
             Text(footerText)
@@ -56,7 +85,8 @@ struct NotificationsView: View {
         }
         // Keep the weekly leaderboard digest (a local notification) in sync with
         // the toggles and the system authorization status the moment they change.
-        .onChange(of: weeklyLeaderboard) { _, _ in LocalNotifier.syncScheduledFromPrefs() }
+        .onChange(of: weeklyReminder) { _, _ in LocalNotifier.syncScheduledFromPrefs() }
+        .onChange(of: sounds) { _, _ in LocalNotifier.syncScheduledFromPrefs() }
         .onChange(of: allow) { _, _ in LocalNotifier.syncScheduledFromPrefs() }
         .onChange(of: status) { _, _ in LocalNotifier.syncScheduledFromPrefs() }
     }
@@ -96,7 +126,7 @@ struct NotificationsView: View {
             Button { Task { await request() } } label: {
                 actionRow(icon: "bell.fill",
                           label: "Turn on notifications",
-                          subtitle: "Get friend requests, shares, and digests",
+                          subtitle: "Action alerts, backups, and reminders",
                           trailing: requesting ? nil : "Enable",
                           showSpinner: requesting)
             }
@@ -108,7 +138,11 @@ struct NotificationsView: View {
     private var footerText: String {
         switch status {
         case .authorized, .ephemeral:
-            return "Heartable can notify you about completed backups and your weekly leaderboard."
+            if !allow { return "Heartable notifications are paused on this device." }
+            if alertSetting == .disabled {
+                return "Banners are off in iOS Settings. Notifications may still appear in Notification Center."
+            }
+            return "Routine confirmations are always silent. iOS controls when notifications appear."
         case .provisional:
             return "Heartable notifications currently arrive quietly. Turn on banners and sounds above if you want immediate alerts."
         case .denied:
@@ -123,25 +157,23 @@ struct NotificationsView: View {
     private func refreshStatus() async {
         let settings = await UNUserNotificationCenter.current().notificationSettings()
         status = settings.authorizationStatus
+        alertSetting = settings.alertSetting
+        soundSetting = settings.soundSetting
     }
 
     private func request() async {
         requesting = true
         let granted = (try? await UNUserNotificationCenter.current()
-            .requestAuthorization(options: [.alert, .badge, .sound])) ?? false
+            .requestAuthorization(options: [.alert, .sound])) ?? false
         if granted { allow = true }
         await refreshStatus()
         requesting = false
-        if granted {
-            banners.success("Notifications enabled")
-        } else {
-            banners.info("Notifications remain off")
-        }
+        // The permission row itself reflects the result. Do not send a
+        // notification about notification settings (especially when denied).
     }
 
     private func openSystemSettings() {
-        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-        banners.info("Opening iOS notification settings")
+        guard let url = URL(string: UIApplication.openNotificationSettingsURLString) else { return }
         UIApplication.shared.open(url)
     }
 

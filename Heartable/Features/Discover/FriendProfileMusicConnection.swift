@@ -233,19 +233,21 @@ struct FriendMixtapeEntryCard: View {
                     .background(theme.palette.roseDim, in: Circle())
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Start a shared mixtape")
+                    Text("Mixtape")
                         .font(Typography.semibold(16))
                         .foregroundStyle(theme.palette.text)
-                    Text("Make something for \(friendName), then add songs and notes.")
+                    Text("Songs, notes, photos — for \(friendName)")
                         .font(Typography.body(12))
                         .foregroundStyle(theme.palette.textSecondary)
                         .multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 6)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(theme.palette.textMuted)
+                Image(systemName: "plus")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(theme.palette.rose)
+                    .frame(width: 44, height: 44)
+                    .background(theme.palette.roseDim, in: Circle())
                     .accessibilityHidden(true)
             }
             .padding(15)
@@ -272,18 +274,8 @@ struct FriendMixtapeEntryCard: View {
             )
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Creates a mixtape and shares it with \(friendName)")
-    }
-}
-
-enum FriendMixtapeCreationOutcome: Sendable, Equatable {
-    case shared(UUID)
-    case createdButNotShared(UUID)
-
-    var mixtapeID: UUID {
-        switch self {
-        case .shared(let id), .createdButNotShared(let id): id
-        }
+        .accessibilityLabel("Make a mixtape for \(friendName)")
+        .accessibilityHint("Add songs, notes, and photos, then send it when ready")
     }
 }
 
@@ -303,38 +295,26 @@ enum FriendMixtapeCreationError: LocalizedError, Equatable {
 
 @MainActor
 struct FriendMixtapeCreator {
-    var create: @MainActor (String) async throws -> UUID?
-    var share: @MainActor (UUID, UUID) async throws -> Void
+    var create: @MainActor (String, UUID) async throws -> UUID?
 
     static let live = FriendMixtapeCreator(
-        create: { title in
-            try await BackendAPI.shared.createMixtape(title: title)
-        },
-        share: { mixtapeID, friendID in
-            try await BackendAPI.shared.shareMixtape(
-                id: mixtapeID,
-                friendID: friendID
-            )
+        create: { title, friendID in
+            try await BackendAPI.shared.createMixtape(title: title, recipientID: friendID)
         }
     )
 
-    func createAndShare(
+    func createDraft(
         title rawTitle: String,
         friendID: UUID
-    ) async throws -> FriendMixtapeCreationOutcome {
+    ) async throws -> UUID {
         let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else {
             throw FriendMixtapeCreationError.emptyTitle
         }
-        guard let mixtapeID = try await create(title) else {
+        guard let mixtapeID = try await create(title, friendID) else {
             throw FriendMixtapeCreationError.creationFailed
         }
-        do {
-            try await share(mixtapeID, friendID)
-            return .shared(mixtapeID)
-        } catch {
-            return .createdButNotShared(mixtapeID)
-        }
+        return mixtapeID
     }
 }
 
@@ -366,8 +346,7 @@ struct SharedMixtapeComposerSheet: View {
                             .font(Typography.heading(26))
                             .foregroundStyle(theme.palette.text)
                         Text(
-                            "It will be shared with \(friendName) now. "
-                                + "You’ll add the songs, cover, and notes next."
+                            "Add songs, photos, and a personal note. Send it when it’s ready."
                         )
                         .font(Typography.body(13))
                         .foregroundStyle(theme.palette.textSecondary)
@@ -426,7 +405,7 @@ struct SharedMixtapeComposerSheet: View {
                                 Image(systemName: "heart.fill")
                                     .accessibilityHidden(true)
                             }
-                            Text(creating ? "Creating…" : "Create and share")
+                            Text(creating ? "Creating…" : "Start mixtape")
                                 .font(Typography.semibold(16))
                         }
                         .foregroundStyle(.white)
@@ -452,21 +431,12 @@ struct SharedMixtapeComposerSheet: View {
         errorMessage = nil
         Task {
             do {
-                let outcome = try await FriendMixtapeCreator.live.createAndShare(
+                let mixtapeID = try await FriendMixtapeCreator.live.createDraft(
                     title: normalizedTitle,
                     friendID: friendID
                 )
-                switch outcome {
-                case .shared:
-                    banners.success("Mixtape shared with \(friendName)")
-                case .createdButNotShared:
-                    banners.error(
-                        "Mixtape created, but it couldn’t be shared. "
-                            + "Try again from the editor."
-                    )
-                }
                 dismiss()
-                onCreated(outcome.mixtapeID)
+                onCreated(mixtapeID)
             } catch {
                 errorMessage = error.localizedDescription
                 creating = false

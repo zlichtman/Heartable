@@ -1090,6 +1090,8 @@ struct MixtapeDTO: Codable, Sendable, Identifiable {
     var description: String?
     var coverUrl: String?
     var createdAt: String?
+    var recipientId: UUID?
+    var sentAt: String?
     /// Not a column — set by the caller after decoding (owner == me).
     var mine: Bool = false
 
@@ -1100,6 +1102,8 @@ struct MixtapeDTO: Codable, Sendable, Identifiable {
         case description
         case coverUrl = "cover_url"
         case createdAt = "created_at"
+        case recipientId = "recipient_id"
+        case sentAt = "sent_at"
     }
 }
 
@@ -1163,6 +1167,11 @@ struct MixtapeListDTO: Sendable {
 struct MixtapeInsertDTO: Codable, Sendable {
     var title: String
     var owner: UUID
+    var recipientId: UUID? = nil
+    enum CodingKeys: String, CodingKey {
+        case title, owner
+        case recipientId = "recipient_id"
+    }
 }
 
 /// Partial update payload for a mixtape.

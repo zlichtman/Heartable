@@ -114,45 +114,38 @@ final class FriendProfileMusicConnectionTests: XCTestCase {
         XCTAssertEqual(summary.sharedTracks.first?.combinedPlays, 8)
     }
 
-    func testMixtapeFlowTrimsTitleCreatesThenShares() async throws {
+    func testMixtapeFlowCreatesPrivateDraftForIntendedFriend() async throws {
         let mixtapeID = UUID()
         var receivedTitle: String?
-        var receivedShare: (UUID, UUID)?
+        var receivedRecipient: UUID?
         let creator = FriendMixtapeCreator(
-            create: { title in
+            create: { title, recipient in
                 receivedTitle = title
+                receivedRecipient = recipient
                 return mixtapeID
-            },
-            share: { id, friendID in
-                receivedShare = (id, friendID)
             }
         )
 
-        let outcome = try await creator.createAndShare(
+        let outcome = try await creator.createDraft(
             title: "  Night drive  ",
             friendID: friendID
         )
 
         XCTAssertEqual(receivedTitle, "Night drive")
-        XCTAssertEqual(receivedShare?.0, mixtapeID)
-        XCTAssertEqual(receivedShare?.1, friendID)
-        XCTAssertEqual(outcome, .shared(mixtapeID))
+        XCTAssertEqual(receivedRecipient, friendID)
+        XCTAssertEqual(outcome, mixtapeID)
     }
 
-    func testMixtapeFlowPreservesCreatedTapeWhenSharingFails() async throws {
-        struct ShareFailure: Error {}
-        let mixtapeID = UUID()
+    func testEmptyMixtapeTitleCannotCreateADraft() async throws {
+        var created = false
         let creator = FriendMixtapeCreator(
-            create: { _ in mixtapeID },
-            share: { _, _ in throw ShareFailure() }
+            create: { _, _ in created = true; return UUID() }
         )
-
-        let outcome = try await creator.createAndShare(
-            title: "For a friend",
-            friendID: friendID
-        )
-
-        XCTAssertEqual(outcome, .createdButNotShared(mixtapeID))
+        do {
+            _ = try await creator.createDraft(title: " \n ", friendID: friendID)
+            XCTFail("Empty title was accepted")
+        } catch { XCTAssertEqual(error as? FriendMixtapeCreationError, .emptyTitle) }
+        XCTAssertFalse(created)
     }
 
     private func leaderboardEntry(

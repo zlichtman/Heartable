@@ -51,7 +51,7 @@ struct ProviderCatalogEntry: Identifiable, Sendable {
     let makeProvider: @Sendable () -> any MusicProvider
 
     var isPublicSearch: Bool {
-        [.audius, .deezer, .internetArchive, .wsum].contains(id)
+        [.audius, .deezer, .wsum].contains(id)
     }
 
     var requiresAccountConnection: Bool { status == .live && !isPublicSearch }
@@ -116,13 +116,6 @@ enum ProviderCatalog {
               playbackTier: .preview,
               usesLocalAudioEngine: true,
               adapter: { DeezerProvider() }),
-        .init(.internetArchive, "Internet Archive", 0x000000, "building.columns.fill",
-              "Open audio archive. Full items play right in the app.", .live,
-              caps: [.search, .playback],
-              url: "https://archive.org/details/audio",
-              playbackTier: .full,
-              usesLocalAudioEngine: true,
-              adapter: { InternetArchiveProvider() }),
         .init(.wsum, "WSUM", 0xc62836, "dot.radiowaves.left.and.right",
               "Madison’s student radio: 91.7 FM, Freeflow, and Sports, streamed in-app.", .live,
               caps: [.search, .playback],

@@ -1,6 +1,6 @@
 # Providers and gift mixtapes
 
-Reviewed September 5, 2026. This separates shipped adapters from proposed work;
+Reviewed September 6, 2026. This separates implemented adapters from proposed work;
 an upstream API having a feature does not mean Heartable implements it.
 
 ## What belongs where
@@ -8,13 +8,20 @@ an upstream API having a feature does not mean Heartable implements it.
 | Section | Services | Current Heartable behavior |
 |---|---|---|
 | Music libraries | Spotify, Apple Music, Plex, Jellyfin | Connected libraries and playlists; playback through Connect/MusicKit or direct server streams. Jellyfin favorites are supported; Plex favorites are not. |
-| Listening history | Last.fm (when configured), ListenBrainz | Read listening statistics; these are not audio players. Last.fm also supplies loved tracks. |
-| Search & radio | Audius, Deezer, Internet Archive, Radio Browser, Mixcloud | Opt-in discovery sources, not paired library accounts. Deezer plays previews; Mixcloud is browse-only/external listening. Archive results may represent multi-file items rather than individual songs. |
+| Listening history | Last.fm (when configured) | Read listening statistics; not an audio player. Also supplies loved tracks. |
+| Search & radio | Audius, Deezer, WSUM | Opt-in discovery sources, not paired library accounts. Audius plays full streams, Deezer plays previews, and WSUM provides live radio. |
 | Coming soon | SoundCloud, TIDAL, Bandcamp, Qobuz, YouTube Music, Amazon Music, Pandora | No connection buttons until a real, tested adapter exists. Existing provider identifiers stay stable. |
 
 Radio includes WSUM 91.7 FM, Freeflow, and Sports, using the station's official
 HTTPS streams. Station listening is visible as now playing but is not counted
-as repeated song listens. WSUM program-level metadata is not implemented.
+as repeated song listens. The next release adds station bookmarks (account-scoped
+on this device) and the official Spinitron show calendar. Show pages are not
+recordings: off-air programs link to official details/playlist logs; live listening
+is offered during airtime. Schedule failures retain the last successful cache.
+[WSUM](https://wsum.org/), [official calendar](https://spinitron.com/WSUM/calendar?layout=1)
+
+Internet Archive, ListenBrainz, Mixcloud, and the general Radio Browser adapter
+are removed from the active catalog. Legacy raw identifiers remain decodable.
 
 ### Worth adding next
 
@@ -64,14 +71,33 @@ expired tokens, missing app/subscription, denied local-network access, offline
 stream, Bluetooth/headphone changes, background/foreground, and account switch.
 Simulator tests do not prove authenticated third-party playback works.
 
-## Gift mixtapes: proposed design, not yet shipped
+## Gift mixtapes: next release, backend deployed
+
+The implemented flow begins at the plus on a friend's profile. A private draft
+can contain ordered song occurrences, a cover, a dedication, and per-song notes
+and photos. Drafts reopen from that profile. Explicit Send verifies friendship
+and a nonempty track list, then atomically grants recipient access and records
+the send time. A recipient can read and play the gift but cannot edit it.
+
+New media uses the private `mixtape-gifts` bucket and short-lived signed URLs.
+Legacy public covers are unchanged. The approved migration and recipient index
+were applied on September 6. Rollback-only tests verified private drafts/media,
+recipient read-only access after Send, unrelated-user denial, and idempotent
+delivery. No fixture users remain. Database lint passes and no migrations remain
+pending. Physical-device photo upload and recipient playback still need acceptance
+testing against the distributed client.
+
+The current shared tape remains editable by its owner. Sending creates no APNs
+push; recipients see it in-app on the sender's profile. Cross-service playback
+uses stored provider references and requires the relevant service to be usable.
+
+### Further design work (not implemented)
 
 The gift is a Heartable-owned arrangement, not a Spotify playlist masquerading
 as a cross-service object:
 
-- Cover, title, dedication, recipient, ordered song occurrences, and an optional
-  note per song. Each occurrence has its own UUID, including repeated songs.
-- A saved draft is private. Explicit Send publishes an immutable gift version;
+- Each occurrence retains its own UUID, including repeated songs. A future Send
+  should publish an immutable gift version;
   subsequent edits need a new published version rather than silently changing
   what the friend received.
 - A recipient resolves each recording against their own connected services:
@@ -84,7 +110,7 @@ as a cross-service object:
 - Optional Save to Spotify/Apple/Jellyfin is a separate, consented export with a
   preview of matches and omissions. It must not overwrite an existing playlist.
 
-Engineering: keep owner/recipient RLS on metadata and media; use atomic append
+Engineering: keep owner/recipient RLS on metadata and media; add atomic append
 and reorder operations with revision checks and idempotency keys. The current
 editor's append decoder has been repaired, but its client-side max-position
 calculation is not a substitute for multi-device transactional ordering. Sharing
@@ -103,7 +129,12 @@ owner through a composite foreign key.
    Spotify/Apple offline media stays under those providers' control. Sharing
    a mixtape does not redistribute imported or purchased audio files.
 
-## OS notification icons
+## Notifications
+
+The current local-notification audit and category controls are documented in
+[NOTIFICATIONS.md](NOTIFICATIONS.md). Remote social push delivery is future work.
+
+### OS notification icons
 
 Heartable calls the supported alternate-app-icon API and persists the confirmed
 icon. The system owns notification headers and may retain old icon snapshots;

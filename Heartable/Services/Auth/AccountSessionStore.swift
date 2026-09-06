@@ -30,6 +30,7 @@ enum AccountSessionStore {
         "heartable.listenbrainz.user",
         "heartable.mixcloud.enabled",
         "heartable.radioBrowser.enabled",
+        "heartable.radio.savedStations.v1",
         providerManifestCacheKey,
     ] + ProviderID.allCases.map { "heartable.backup.service.\($0.rawValue)" }
 

@@ -45,6 +45,7 @@ struct FriendProfileView: View {
         from: nil
     )
     @State private var sharedMixtapes: [MixtapeDTO] = []
+    @State private var draftMixtapes: [MixtapeDTO] = []
     @State private var friendship: FriendshipState = .loading
     @State private var loading = true
     @State private var actionBusy = false
@@ -69,6 +70,23 @@ struct FriendProfileView: View {
             LazyVStack(spacing: 20) {
                 hero
                 if !loading {
+                    if isFriend {
+                        FriendMixtapeEntryCard(friendName: name) { showingMixtapeComposer = true }
+                            .padding(.horizontal, 18)
+                        ForEach(draftMixtapes) { tape in
+                            NavigationLink {
+                                MixtapeEditorView(mixtapeID: tape.id, recipientName: name)
+                            } label: {
+                                HStack {
+                                    Image(systemName: "cassette")
+                                    Text(tape.title ?? "Mixtape")
+                                    Spacer()
+                                    Text("Draft").foregroundStyle(theme.palette.textMuted)
+                                }.font(Typography.medium(14)).foregroundStyle(theme.palette.text)
+                                    .padding(.horizontal, 24).frame(minHeight: 44)
+                            }.buttonStyle(.plain)
+                        }
+                    }
                     ForEach(visibleModules) { module in
                         moduleSection(module)
                     }
@@ -110,7 +128,7 @@ struct FriendProfileView: View {
             )
         }
         .navigationDestination(item: $createdMixtapeID) { mixtapeID in
-            MixtapeEditorView(mixtapeID: mixtapeID)
+            MixtapeEditorView(mixtapeID: mixtapeID, recipientName: name)
         }
     }
 
@@ -142,12 +160,6 @@ struct FriendProfileView: View {
 
     @ViewBuilder
     private var sharedMixtapesModule: some View {
-        if isFriend {
-            FriendMixtapeEntryCard(friendName: name) {
-                showingMixtapeComposer = true
-            }
-            .padding(.horizontal, 18)
-        }
         mixtapesSection
     }
 
@@ -787,7 +799,9 @@ struct FriendProfileView: View {
             compatibility = .insufficient
         }
 
-        sharedMixtapes = await mixTask.shared.filter { $0.owner == userId }
+        let tapes = await mixTask
+        sharedMixtapes = tapes.shared.filter { $0.owner == userId }
+        draftMixtapes = tapes.mine.filter { $0.recipientId == userId && $0.sentAt == nil }
         let curation = await curationTask
         featuredPlaylists = curation?.playlists.map(\.unified) ?? []
         visibleModules = FriendProfileModuleLayout.visibleModules(

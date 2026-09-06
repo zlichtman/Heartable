@@ -56,9 +56,13 @@ final class VinylShelfTests: XCTestCase {
         try await render(themeKey: Themes.defaultKey, selection: 5, withChrome: true,
                          size: CGSize(width: 667, height: 375))
     }
+    func testResizeKeepsLastSleeveCenteredWithoutADeferredScroll() async throws {
+        try await render(themeKey: Themes.defaultKey, selection: 11, withChrome: true,
+                         resizeTo: CGSize(width: 667, height: 375))
+    }
 
     private func render(themeKey: String, selection: Int, withChrome: Bool = false,
-                        size: CGSize = CGSize(width: 844, height: 390)) async throws {
+                        size: CGSize = CGSize(width: 844, height: 390), resizeTo: CGSize? = nil) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.keyWindow
         let window = UIWindow(windowScene: scene)
@@ -100,6 +104,16 @@ final class VinylShelfTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(1000))
         XCTAssertGreaterThan(host.view.bounds.width, host.view.bounds.height)
         XCTAssertEqual(observedSelection, selection, "Mounting must preserve the selected occurrence")
+        try assertCentered(selection, count: tracks.count, in: host.view)
+        if let resizeTo {
+            window.frame.size = resizeTo
+            host.view.frame = window.bounds
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(100))
+            XCTAssertEqual(observedSelection, selection)
+            try assertCentered(selection, count: tracks.count, in: host.view)
+        }
         let screenshot = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
             window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
         }
@@ -110,6 +124,22 @@ final class VinylShelfTests: XCTestCase {
         for track in tracks {
             if let url = track.albumArt { await ArtworkDiskCache.shared.removeEntry(for: url) }
         }
+    }
+
+    private func assertCentered(_ selection: Int, count: Int, in view: UIView) throws {
+        let scroll = try XCTUnwrap(horizontalScroll(in: view))
+        let insets = scroll.adjustedContentInset
+        let range = scroll.contentSize.width + insets.left + insets.right - scroll.bounds.width
+        let progress = (scroll.contentOffset.x + insets.left) / range
+        XCTAssertEqual(progress, CGFloat(selection) / CGFloat(count - 1), accuracy: 0.005,
+                       "The selected sleeve must actually be centered, not just retained in the binding. Offset: \(scroll.contentOffset), size: \(scroll.contentSize), insets: \(insets), bounds: \(scroll.bounds)")
+    }
+
+    private func horizontalScroll(in view: UIView) -> UIScrollView? {
+        if let scroll = view as? UIScrollView, scroll.contentSize.width > scroll.bounds.width + 10 {
+            return scroll
+        }
+        return view.subviews.lazy.compactMap { self.horizontalScroll(in: $0) }.first
     }
 }
 

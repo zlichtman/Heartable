@@ -65,7 +65,9 @@ actor LyricsService {
             return result
         } catch {
             let empty: (synced: [SyncedLine], plain: String?) = ([], nil)
-            cache[cacheKey] = empty
+            // A timeout is not evidence that lyrics do not exist. Only cache an
+            // authoritative miss, so opening the player later can recover.
+            if case HTTPClient.Failure.status(404) = error { cache[cacheKey] = empty }
             return empty
         }
     }
@@ -137,11 +139,23 @@ final class LyricsModel {
     private(set) var loading = false
 
     private var loadedURI: String?
+    private var loadTask: Task<Void, Never>?
+
+    init(synced: [SyncedLine] = [], plain: String? = nil) {
+        self.synced = synced
+        self.plain = plain
+    }
+
+    nonisolated static func previewIndices(active: Int?, count: Int) -> Range<Int> {
+        let start = min(max(0, (active ?? 0) - 1), max(0, count - 3))
+        return start..<min(count, start + 3)
+    }
 
     /// Load lyrics for the given now-playing track. No-op if the same `uri` is
     /// already loaded or in flight.
     func load(for now: PlayerStore.Now) {
         guard now.uri != loadedURI else { return }
+        loadTask?.cancel()
         loadedURI = now.uri
         synced = []
         plain = nil
@@ -152,7 +166,7 @@ final class LyricsModel {
         let durationMs = now.durationMs
         let uri = now.uri
 
-        Task {
+        loadTask = Task {
             let result = await LyricsService.shared.fetch(
                 track: track,
                 artist: artist,
@@ -160,7 +174,7 @@ final class LyricsModel {
                 durationMs: durationMs
             )
             // Drop if the track changed while we were fetching.
-            guard uri == self.loadedURI else { return }
+            guard !Task.isCancelled, uri == self.loadedURI else { return }
             self.synced = result.synced
             self.plain = result.plain
             self.loading = false

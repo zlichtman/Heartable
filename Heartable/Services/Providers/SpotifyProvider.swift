@@ -30,51 +30,67 @@ struct SpotifyProvider: MusicProvider {
         await SpotifyAuth.clearSession()
     }
 
-    // MARK: - Reads (never throw — return [] on not-connected/failure)
+    // MARK: - Reads
 
     func topTracks(range: StatRange, limit: Int) async -> [UnifiedTrack] {
-        guard let token = await SpotifyAuth.getValidAccessToken() else { return [] }
+        await readTopTracks(range: range, limit: limit).items ?? []
+    }
+
+    func readTopTracks(range: StatRange, limit: Int) async -> ProviderRead<UnifiedTrack> {
+        guard let token = await SpotifyAuth.getValidAccessToken() else { return .unavailable }
         do {
-            return try await SpotifyAPI.topTracks(token: token, range: range, limit: limit)
-                .map(Self.mapTrack)
+            return .success(try await SpotifyAPI.topTracks(token: token, range: range, limit: limit)
+                .map(Self.mapTrack))
         } catch {
-            return []
+            return .unavailable
         }
     }
 
     func likedTracks(limit: Int) async -> [UnifiedTrack] {
-        guard let token = await SpotifyAuth.getValidAccessToken() else { return [] }
+        await readLikedTracks(limit: limit).items ?? []
+    }
+
+    func readLikedTracks(limit: Int) async -> ProviderRead<UnifiedTrack> {
+        guard let token = await SpotifyAuth.getValidAccessToken() else { return .unavailable }
         do {
-            return try await SpotifyAPI.savedTracks(token: token, limit: limit)
-                .map(Self.mapTrack)
+            return .success(try await SpotifyAPI.savedTracks(token: token, limit: limit)
+                .map(Self.mapTrack))
         } catch {
-            return []
+            return .unavailable
         }
     }
 
     func playlists() async -> [UnifiedPlaylist] {
-        guard let token = await SpotifyAuth.getValidAccessToken() else { return [] }
+        await readPlaylists().items ?? []
+    }
+
+    func readPlaylists() async -> ProviderRead<UnifiedPlaylist> {
+        guard let token = await SpotifyAuth.getValidAccessToken() else { return .unavailable }
         do {
-            return try await SpotifyAPI.myPlaylists(token: token, limit: 10_000)
-                .map(Self.mapPlaylist)
+            return .success(try await SpotifyAPI.myPlaylists(token: token, limit: 10_000)
+                .map(Self.mapPlaylist))
         } catch {
-            return []
+            return .unavailable
         }
     }
 
     func playlistTracks(_ playlistID: String) async -> [UnifiedTrack] {
+        await readPlaylistTracks(playlistID).items ?? []
+    }
+
+    func readPlaylistTracks(_ playlistID: String) async -> ProviderRead<UnifiedTrack> {
         guard let token = await SpotifyAuth.getValidAccessToken() else {
             spotifyLog.error("playlistTracks(\(playlistID, privacy: .public)): no valid access token")
-            return []
+            return .unavailable
         }
         do {
             let tracks = try await SpotifyAPI.playlistTracks(token: token, id: playlistID)
                 .map(Self.mapTrack)
             spotifyLog.info("playlistTracks(\(playlistID, privacy: .public)): \(tracks.count) tracks")
-            return tracks
+            return .success(tracks)
         } catch {
             spotifyLog.error("playlistTracks(\(playlistID, privacy: .public)) failed: \(error.localizedDescription, privacy: .public)")
-            return []
+            return .unavailable
         }
     }
 

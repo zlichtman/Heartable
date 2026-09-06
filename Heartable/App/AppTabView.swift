@@ -154,8 +154,7 @@ struct AppTabView: View {
             guard let message = player.feedbackMessage else { return }
             banners.show(
                 message,
-                style: message.contains("Playing from")
-                    || message.hasPrefix("No Spotify Connect device")
+                style: message.hasPrefix("Playing from")
                     ? .info
                     : .error
             )

@@ -955,6 +955,7 @@ struct BackendAPI: Sendable {
             .value) ?? []
         for i in all.indices {
             all[i].mine = (uid != nil && all[i].owner == uid)
+            all[i].coverUrl = await mixtapeMediaDisplayURL(all[i].coverUrl)
         }
         return MixtapeListDTO(mine: all.filter { $0.mine }, shared: all.filter { !$0.mine })
     }
@@ -970,23 +971,27 @@ struct BackendAPI: Sendable {
             .value) ?? []
         guard var mixtape = mixtapes.first else { return nil }
         mixtape.mine = (uid != nil && mixtape.owner == uid)
-        let tracks: [MixtapeTrackDTO] = (try? await client
+        mixtape.coverUrl = await mixtapeMediaDisplayURL(mixtape.coverUrl)
+        guard var tracks: [MixtapeTrackDTO] = try? await client
             .from("mixtape_tracks")
             .select()
             .eq("mixtape_id", value: id.uuidString)
             .order("position", ascending: true)
             .execute()
-            .value) ?? []
+            .value else { return nil }
+        for index in tracks.indices {
+            tracks[index].noteImageUrl = await mixtapeMediaDisplayURL(tracks[index].noteImageUrl)
+        }
         return MixtapeDetailDTO(mixtape: mixtape, tracks: tracks)
     }
 
     /// Create a mixtape, stamping owner from the live session (mirrors RN).
     @discardableResult
-    func createMixtape(title: String) async throws -> UUID? {
+    func createMixtape(title: String, recipientID: UUID? = nil) async throws -> UUID? {
         guard let uid = await myUID() else { throw BackendError.notSignedIn }
         let rows: [IdRowDTO] = try await client
             .from("mixtapes")
-            .insert(MixtapeInsertDTO(title: title, owner: uid))
+            .insert(MixtapeInsertDTO(title: title, owner: uid, recipientId: recipientID))
             .select("id")
             .execute()
             .value
@@ -1084,6 +1089,15 @@ struct BackendAPI: Sendable {
         try await client.from("mixtape_shares")
             .upsert(row, onConflict: "mixtape_id,shared_with")
             .execute()
+    }
+
+    func sendMixtapeGift(id: UUID, friendID: UUID, expectedOwner: UUID) async throws {
+        guard await myUID() == expectedOwner else { throw BackendError.notSignedIn }
+        try await client.rpc("send_mixtape_gift", params: [
+            "expected_owner": expectedOwner.uuidString,
+            "target_mixtape": id.uuidString,
+            "target_friend": friendID.uuidString
+        ]).execute()
     }
 
     func listMixtapeShares(id: UUID) async -> [UUID] {
@@ -1315,6 +1329,7 @@ struct BackendAPI: Sendable {
         // Storage cannot participate in the Postgres transaction. Clean this
         // account's media first; failure leaves database rows intact and retryable.
         try await removeStorageFolder(bucket: "mixtape-media", path: uidStr.lowercased())
+        try await removeStorageFolder(bucket: "mixtape-gifts", path: uidStr.lowercased())
         guard await myUID(expected: uid) != nil else { throw BackendError.notSignedIn }
         // One transaction and verified cascades: no paginated ID reads or
         // giant DELETE URLs. The server independently verifies expected_owner.
@@ -1330,7 +1345,13 @@ struct BackendAPI: Sendable {
                 options: SearchOptions(limit: 100)
             )
             guard !files.isEmpty else { return }
-            try await storage.remove(paths: files.map { "\(path)/\($0.name)" })
+            // New gift media is nested by mixtape. Storage returns virtual
+            // folders without an ID; deleting that folder name does not recurse.
+            for folder in files where folder.id == nil {
+                try await removeStorageFolder(bucket: bucket, path: "\(path)/\(folder.name)")
+            }
+            let objectPaths = files.filter { $0.id != nil }.map { "\(path)/\($0.name)" }
+            if !objectPaths.isEmpty { try await storage.remove(paths: objectPaths) }
             if files.count < 100 { return }
         }
     }
@@ -1346,6 +1367,12 @@ struct BackendAPI: Sendable {
     /// the function verifies it and only deletes that user's own data. After this
     /// returns, the local session is dead, so the caller should sign out.
     func deleteAccount() async throws {
+        guard let uid = await myUID() else { throw BackendError.notSignedIn }
+        // The legacy account-deletion function predates private gift media.
+        // Remove this account's nested uploads while its Storage policies still
+        // authorize them, before the auth record is deleted server-side.
+        try await removeStorageFolder(bucket: "mixtape-gifts", path: uid.uuidString.lowercased())
+        guard await myUID(expected: uid) != nil else { throw BackendError.notSignedIn }
         _ = try await requireAccessToken() // surface a clean "Not signed in" if there's no session
         let res: DeleteAccountResultDTO = try await client.functions
             .invoke("delete-account", options: .init(body: [String: String]()))
@@ -1370,17 +1397,24 @@ struct BackendAPI: Sendable {
         return url.absoluteString + "?t=\(Int(Date().timeIntervalSince1970))"
     }
 
-    /// Upload a JPEG cover to the public `mixtape-media` bucket under the user's
-    /// folder and return its public URL string. Callers then persist the URL via
-    /// `updateMixtape(coverUrl:)`.
+    /// Immutable private media avoids stale artwork on replacement. Persist the
+    /// reference, not the expiring signed URL used for display.
     func uploadMixtapeImage(mixtapeID: UUID, _ data: Data) async throws -> String {
         guard let uid = await myUID() else { throw BackendError.notSignedIn }
-        let path = "\(uid.uuidString.lowercased())/\(mixtapeID.uuidString.lowercased()).jpg"
+        let path = "\(uid.uuidString.lowercased())/\(mixtapeID.uuidString.lowercased())/\(UUID().uuidString.lowercased()).jpg"
         _ = try await client.storage
-            .from("mixtape-media")
-            .upload(path, data: data, options: FileOptions(contentType: "image/jpeg", upsert: true))
-        let url = try client.storage.from("mixtape-media").getPublicURL(path: path)
-        return url.absoluteString + "?t=\(Int(Date().timeIntervalSince1970))"
+            .from("mixtape-gifts")
+            .upload(path, data: data, options: FileOptions(contentType: "image/jpeg", upsert: false))
+        return "heartable-media://mixtape-gifts/\(path)"
+    }
+
+    func mixtapeMediaDisplayURL(_ reference: String?) async -> String? {
+        guard let reference, !reference.isEmpty else { return nil }
+        guard let path = MixtapeMediaReference.path(from: reference) else {
+            return reference.hasPrefix("https://") ? reference : nil
+        }
+        return try? await client.storage.from("mixtape-gifts")
+            .createSignedURL(path: path, expiresIn: 3600).absoluteString
     }
 }
 

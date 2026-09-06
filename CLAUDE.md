@@ -113,8 +113,8 @@ capabilities, setup text, playback tier, and transport route. A provider must
 never claim a capability its public API cannot deliver.
 
 Only Apple Music, Spotify, Plex, and Jellyfin are library connections. Last.fm,
-when configured, is a separate history connection. Audius, Deezer, Internet
-Archive, and WSUM are always-available public search adapters, not pairings.
+when configured, is a separate history connection. Audius, Deezer, and WSUM
+are always-available public search adapters, not pairings.
 Never include public charts in library hydration, account restoration, or stats.
 Search defaults to Heartable + connected libraries; public sources require an
 explicit multi-selection. Preserve selected sources across query changes, and
@@ -176,6 +176,12 @@ The library is cache-first and stale-while-revalidate:
 3. Apply a coherent replacement only when data changed.
 4. Keep the last good snapshot when a provider request fails.
 
+Merge refresh results independently per provider. `ProviderRead.success([])`
+means a verified empty collection; `.unavailable` must preserve that provider's
+last snapshot and playlist occurrences. Another service succeeding is never
+permission to prune a failed service. Spotify metadata honors Retry-After across
+reads; cached playback URIs remain usable without waiting for metadata refresh.
+
 `LibrarySessionStore` owns Home library state above the tab hierarchy. Home
 navigation must never own or await playlist traversal or artist aggregation;
 tab selection renders cached core content while derived indexes reconcile in
@@ -198,8 +204,24 @@ area. Never wrap the entire shelf in a vertical scroller with a full-page
 minimum height: it lets the player overlap the selected cover. Compare sleeve
 and viewport geometry in the same coordinate space; scroll-content margins
 change the built-in scroll coordinate origin. First/last targets must center.
+Derive landscape presentation from the current geometry, not deferred state.
+Native initial/resize anchors must center the selected occurrence; do not use a
+delayed scroll task that produces a visible correction after rotation.
 Playlist Play lives opposite Back; in landscape it starts the selected song
 with the whole playlist queue. Do not add a second play action to the caption.
+
+WSUM station bookmarks are account-scoped on this device and survive relaunch.
+Show listings come from the official Spinitron calendar, retain last-good data,
+and distinguish broadcast times from recordings. Only offer a show's Listen
+live action while it is on air; off-air shows link to their official details.
+
+Gift mixtapes start from the plus on a friend's profile, not a separate Library
+entry. Draft metadata and images stay owner-only until explicit Send atomically
+grants recipient access. New media uses the private `mixtape-gifts` bucket and
+stable references; generate short-lived signed URLs for display. Never persist
+provider credentials in a gift. Apply and validate the matching migration before
+releasing the client. Published tapes remain editable; immutable gift versions
+and automatic cross-provider recording resolution are not implemented.
 
 Backup names are local date and time only by default, persisted at
 capture time, and editable through Rename in the backup actions drawer. Never
@@ -279,6 +301,14 @@ Photo Library, Camera, and Files.
 - Route all transient feedback through `BannerCenter` as an app-wide Heartable
   notification. `BannerCenter` delegates to Apple's notification system; never
   add screen-local toasts, snackbars, overlays, or duplicate playback feedback.
+- Notification preferences are device-level. Routine confirmations are silent
+  and independently mutable; automatic backups and the opt-in Sunday 6 PM
+  reminder have separate controls. Errors bypass routine mute, never master/OS
+  settings. Recheck foreground policy and serialize reminder reconciliation.
+  Do not advertise social push alerts before an APNs pipeline exists.
+- The full player displays a themed lyrics card with actual text, not a Lyrics
+  navigation button. Synced lines follow playback; plain text remains scrollable
+  without invented timestamps. Expansion reuses the same lyrics model.
 - Navigation pushes use the shared back chevron. Option drawers use the native
   drag handle and swipe-to-dismiss, without redundant Close/down/x buttons.
   Use `HeartableDrawer` for content-fitted menus and confirmations, and

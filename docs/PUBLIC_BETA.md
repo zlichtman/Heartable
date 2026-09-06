@@ -6,6 +6,14 @@ verified in Apple, Spotify, and Supabase dashboards.
 
 ## Automated repository gates
 
+September 6 backend verification: gift-media migrations are applied, rollback-only
+RLS/send tests passed, no fixture users remain, and schema lint reports no errors.
+The new recipient foreign-key index is installed. Existing advisor warnings are
+not a clean security sign-off: review [authenticated security-definer functions](https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable)
+and enable [leaked-password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection)
+before a public cohort. The policy-free `capture_debug` table remains intentionally
+deny-all; see [the RLS advisor explanation](https://supabase.com/docs/guides/database/database-linter?lint=0008_rls_enabled_no_policy).
+
 - [ ] `ci_scripts/validate_release_identity.sh` passes.
 - [ ] `xcodegen generate` produces no unexpected project diff.
 - [ ] The full unit-test suite passes with Swift 6 strict concurrency.
@@ -36,6 +44,15 @@ Test on a physical iPhone using the exact processed TestFlight binary:
 
 ## Provider and playback matrix
 
+- [ ] Spotify production access is approved before opening Spotify connection
+      to a public cohort. As checked September 6, 2026, development mode allows
+      five allowlisted users; the standard partner route requires an organization,
+      a launched service and at least 250,000 MAUs. See [quota requirements](https://developer.spotify.com/documentation/web-api/concepts/quota-modes).
+- [ ] Obtain a policy review/written Spotify guidance for cross-service content,
+      derived listening metrics, synchronized lyrics and monetization. Extended
+      quota is not permission for these features. See [Developer Policy](https://developer.spotify.com/policy)
+      and [Compliance Tips](https://developer.spotify.com/compliance-tips).
+
 - [ ] The Apple App ID has the MusicKit App Service enabled; Apple Music
       authorization, library, catalog search, artwork, and playback work on a
       subscribed physical device.
@@ -58,11 +75,15 @@ Test on a physical iPhone using the exact processed TestFlight binary:
       service, from both idle and playing. Repeat rapid taps and Pause during a
       start; only the final requested song may play. Test a failed Spotify pause,
       expired direct-stream URL, network outage, and audio interruption/recovery.
-- [ ] Deezer is a preview route, not full-song playback. Audius, Internet Archive,
-      WSUM, Plex and Jellyfin use the direct-stream engine; verify each
+- [ ] Deezer is a preview route, not full-song playback. Audius, WSUM, Plex and
+      Jellyfin use the direct-stream engine; verify each
       connected service with real playable content, not only simulator fixtures.
 - [ ] A provider outage leaves the last coherent cached library visible and
       gives actionable native notification feedback.
+- [ ] Refresh Apple Music successfully while Spotify returns 429. Spotify's
+      playlists, ordered track occurrences and artwork remain visible after
+      navigation/relaunch; cached track URIs still reach the playback path.
+      A subsequent successful empty response removes only verified-empty data.
 
 ## Privacy and App Store Connect
 
@@ -119,6 +140,17 @@ registration to an unrestricted public cohort.
       Verify the drawer uses the installed Heartable icon and stays fully themed.
 - [ ] Search WSUM with WSUM selected; verify FM, Freeflow, and Sports stream
       on a physical device and do not manufacture song-play-count entries.
+- [ ] Save a station, relaunch and sign out/in: it remains saved for that account
+      on that device, but not for a different account. Show listings use Central
+      time, survive feed failure, and only offer live listening during airtime.
+- [ ] The player shows actual synced/plain lyrics in its themed card; expansion
+      retains the current track. Rapid track changes cannot reveal old lyrics.
+- [ ] On two disposable friend accounts, create a Mixtape from the profile plus,
+      reopen the draft, add/reorder songs, notes, a cover and a note photo, then
+      Send. Before Send, the recipient and an unrelated account cannot read the
+      draft or private media. Afterwards only the recipient gains read access.
+      Empty sends fail, retrying Send creates no duplicate share, and clear data
+      or account deletion removes the owner's nested gift uploads.
 - [ ] Fresh Spotify onboarding imports recent history without delaying entry.
       Reconnect grants `user-read-recently-played`; imported plays are labeled
       Spotify, do not inflate Heartable stats, and stay deleted after clear/reload.
@@ -135,6 +167,11 @@ registration to an unrestricted public cohort.
       Check Home Screen and notification artwork separately. iOS owns the
       notification header and may retain artwork on older delivered notices;
       Heartable must not delete notification history or spoof sender icons.
+- [ ] Mute routine confirmations: errors and enabled automatic backups still
+      arrive. Master off and OS denial suppress everything. Routine updates are
+      silent, Sounds off silences other categories, and rapid weekly-reminder
+      toggles leave at most one correct pending schedule. No social-push switch
+      appears until remote delivery is implemented.
 - [ ] Add all three widgets in small/medium sizes. Switch light/dark presets,
       edit the active custom theme, then delete it; existing widgets should
       receive the current semantic palette without removal/re-adding. Allow

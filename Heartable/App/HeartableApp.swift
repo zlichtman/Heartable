@@ -20,7 +20,9 @@ final class HeartableNotificationDelegate: NSObject, UIApplicationDelegate,
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification
     ) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        LocalNotifier.foregroundOptions(
+            categoryIdentifier: notification.request.content.categoryIdentifier
+        )
     }
 
     func application(

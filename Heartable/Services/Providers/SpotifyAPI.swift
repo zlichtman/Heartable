@@ -347,10 +347,19 @@ enum SpotifyAPI {
     }
 
     private static func getJSON<T: Decodable>(_ path: String, token: String) async throws -> T {
+        if let remaining = await SpotifyReadBackoff.shared.remaining() {
+            throw SpotifyReadBackoff.Limited(retryAfter: remaining)
+        }
         guard let url = URL(string: "\(base)\(path)") else {
             throw ProviderError("Invalid Spotify URL: \(path)")
         }
-        let (data, resp) = try await HTTPClient.send(url, headers: bearer(token))
+        // Reads share a cooldown; do not retry every playlist independently.
+        // Playback commands are not gated by this metadata-read cooldown.
+        let (data, resp) = try await HTTPClient.send(url, headers: bearer(token), retryRateLimits: false)
+        if resp.statusCode == 429 {
+            let delay = await SpotifyReadBackoff.shared.record(resp.value(forHTTPHeaderField: "Retry-After"))
+            throw SpotifyReadBackoff.Limited(retryAfter: delay)
+        }
         guard (200..<300).contains(resp.statusCode) else {
             if resp.statusCode == 401 { throw ProviderError("Session expired. Please sign in again.") }
             throw ProviderError("Spotify API \(resp.statusCode)")
@@ -371,6 +380,38 @@ enum SpotifyAPI {
             }
             return "Playback error (\(status))"
         }
+    }
+}
+
+actor SpotifyReadBackoff {
+    static let shared = SpotifyReadBackoff()
+    struct Limited: LocalizedError {
+        let retryAfter: TimeInterval
+        var errorDescription: String? { "Spotify is limiting requests. Showing your saved library." }
+    }
+    private var resumeAt: Date?
+
+    func remaining(now: Date = Date()) -> TimeInterval? {
+        guard let resumeAt, resumeAt > now else { return nil }
+        return resumeAt.timeIntervalSince(now)
+    }
+
+    @discardableResult
+    func record(_ header: String?, now: Date = Date()) -> TimeInterval {
+        var delay: TimeInterval = 30
+        if let header {
+            if let seconds = TimeInterval(header), seconds.isFinite {
+                delay = max(1, seconds)
+            } else {
+                let formatter = DateFormatter()
+                formatter.locale = Locale(identifier: "en_US_POSIX")
+                formatter.timeZone = TimeZone(secondsFromGMT: 0)
+                formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+                if let date = formatter.date(from: header) { delay = max(1, date.timeIntervalSince(now)) }
+            }
+        }
+        resumeAt = max(resumeAt ?? now, now.addingTimeInterval(delay))
+        return resumeAt!.timeIntervalSince(now)
     }
 }
 

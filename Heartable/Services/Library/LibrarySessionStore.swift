@@ -14,6 +14,7 @@ import Observation
 final class LibrarySessionStore {
     let library: LibraryStore
     let master: MasterLibraryStore
+    let savedRadio = SavedRadioStations()
 
     private(set) var cachedDataReady = false
     private(set) var synchronizing = false
@@ -36,6 +37,7 @@ final class LibrarySessionStore {
     /// playlist/liked-song core as soon as the cache is decoded, before its artist
     /// projection is calculated, so Home becomes useful as early as possible.
     func prepareCachedData(using playlistTracks: PlaylistTracksRepository) async {
+        savedRadio.activate(ownerID: AccountSessionStore.currentOwnerID)
         if cachedDataReady { return }
         if let preparationTask {
             await preparationTask.value
@@ -156,10 +158,12 @@ final class LibrarySessionStore {
         synchronizing = false
         library.reset()
         master.reset()
+        savedRadio.activate(ownerID: nil)
     }
 
     func removeClearedMusicData(ownerID: UUID, playlistTracks: PlaylistTracksRepository) async {
         guard AccountSessionStore.currentOwnerID == ownerID else { return }
+        savedRadio.clear(ownerID: ownerID)
         lifecycleID = UUID()
         let requestID = lifecycleID
         synchronizationTask?.cancel()

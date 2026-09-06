@@ -9,6 +9,7 @@ struct FullPlayerView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var showLyrics = false
+    @State private var lyrics = LyricsModel()
     @State private var isScrubbing = false
     @State private var scrubFraction: Double = 0
     @State private var showRemaining = false
@@ -41,7 +42,9 @@ struct FullPlayerView: View {
                             trackInfo(now)
                             scrubber(now)
                             transport(now)
-                            lyricsButton
+                            if !now.source.isLiveRadio {
+                                LyricsCard(model: lyrics, positionMs: now.positionMs) { showLyrics = true }
+                            }
                         }
                         .padding(24)
                         .frame(maxWidth: .infinity)
@@ -49,8 +52,11 @@ struct FullPlayerView: View {
                     }
                     .scrollIndicators(.hidden)
                 }
+                .onChange(of: now.uri, initial: true) {
+                    if !now.source.isLiveRadio { lyrics.load(for: now) }
+                }
                 .sheet(isPresented: $showLyrics) {
-                    LyricsSheet(now: now)
+                    LyricsSheet(model: lyrics)
                         .environment(theme)
                         .environment(player)
                         .heartableSheetChrome(dragIndicator: .hidden)
@@ -121,20 +127,6 @@ struct FullPlayerView: View {
                 .frame(maxWidth: 120)
         }
         .accessibilityElement(children: .combine)
-    }
-
-    private var lyricsButton: some View {
-        Button { showLyrics = true } label: {
-            Label("Lyrics", systemImage: "text.quote")
-                .font(Typography.medium(13))
-                .foregroundStyle(theme.palette.textSecondary)
-                .padding(.horizontal, 14).padding(.vertical, 8)
-                .frame(minHeight: 44)
-                .background(
-                    Capsule().fill(theme.palette.surface)
-                )
-        }
-        .buttonStyle(.plain)
     }
 
     private func scrubber(_ now: PlayerStore.Now) -> some View {
@@ -290,10 +282,9 @@ private struct LyricsSheet: View {
     @Environment(PlayerStore.self) private var player
     @Environment(\.dismiss) private var dismiss
 
-    let now: PlayerStore.Now
-    @State private var model = LyricsModel()
+    let model: LyricsModel
 
-    private var positionMs: Int { player.now?.positionMs ?? now.positionMs }
+    private var positionMs: Int { player.now?.positionMs ?? 0 }
 
     var body: some View {
         NavigationStack {
@@ -313,7 +304,6 @@ private struct LyricsSheet: View {
                     }
                 }
         }
-        .onAppear { model.load(for: now) }
     }
 
     @ViewBuilder
@@ -336,7 +326,7 @@ private struct LyricsSheet: View {
         return ScrollViewReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    ForEach(Array(model.synced.enumerated()), id: \.element.id) { pair in
+                    ForEach(Array(model.synced.enumerated()), id: \.offset) { pair in
                         lineView(text: pair.element.text, isActive: pair.offset == active)
                             .id(pair.offset)
                     }

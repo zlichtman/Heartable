@@ -17,7 +17,8 @@ final class ProviderDiscoveryTests: XCTestCase {
         }
         XCTAssertEqual(ProviderCatalog.entry(.wsum)?.section, .discovery)
         XCTAssertEqual(ProviderCatalog.entries(in: .library).map(\.id), [.apple, .spotify, .plex, .jellyfin])
-        XCTAssertEqual(ProviderCatalog.publicSearchIDs, [.audius, .deezer, .internetArchive, .wsum])
+        XCTAssertEqual(ProviderCatalog.publicSearchIDs, [.audius, .deezer, .wsum])
+        XCTAssertNil(ProviderCatalog.entry(.internetArchive))
     }
 
     func testWSUMSearchIsSpecificAndStable() {

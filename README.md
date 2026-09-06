@@ -127,9 +127,10 @@ the mini-player. The first/last songs center correctly. Playlist Play stays in
 the top-right navigation slot; in vinyl mode it begins at the selected song.
 
 Music providers are Apple Music, Spotify, Plex, and Jellyfin. Audius, Deezer
-(previews), Internet Archive, and WSUM appear as logo-only public search sources;
+(previews), and WSUM appear as logo-only public search sources;
 they never become account pairings or contribute chart data to personal stats.
-ListenBrainz, Mixcloud, and the general Radio Browser adapter have been removed.
+Internet Archive, ListenBrainz, Mixcloud, and the general Radio Browser adapter
+have been removed.
 Search defaults to Heartable plus connected libraries. Its themed source drawer
 supports multiple selections, with public catalogs/radio opt-in and real service
 logos, including the installed Heartable icon.
@@ -141,6 +142,25 @@ activity. Clearing history also prevents an in-flight import from restoring it.
 An existing Spotify connection needs reconnecting to grant the new recent-history
 scope. Queue installation now verifies native Shuffle/Repeat state on the device
 that received Play instead of assuming accepted commands finished in order.
+
+### Build 53 (TestFlight processing pending)
+
+- Provider-specific refreshes retain Spotify playlists and cached track order
+  during rate limits, even while another service refreshes successfully.
+- Lyrics are visible inline in the player, with synced highlighting or scrollable
+  plain text. WSUM has saved stations and official show listings; schedule entries
+  are not represented as on-demand recordings.
+- A friend's profile has a Mixtape plus action: start a private draft, add songs,
+  notes and photos, then Send. The private-media/database migration is deployed
+  and its owner/recipient privacy checks passed on September 6.
+- Notification controls separate silent routine confirmations, automatic backups,
+  an opt-in weekly reminder, and sounds. See the [notification audit](docs/NOTIFICATIONS.md).
+
+These changes are not yet a new processed TestFlight build.
+Local validation on September 6: 218 tests passed (including 13 notification
+tests), release identity passed, and unsigned generic-iPhone and generic-Simulator
+Release builds succeeded. Remote Mixtape rollback-only privacy tests also passed; no test users
+remain. Signed distribution and physical-device acceptance remain release gates.
 
 Account-owned state is namespaced by the Supabase user. Provider pairing intent
 is stored in an RLS-protected account manifest, while provider secrets remain in

@@ -15,6 +15,7 @@ struct MixtapeEditorView: View {
     @Environment(\.dismiss) private var dismiss
 
     let mixtapeID: UUID
+    var recipientName: String? = nil
 
     @State private var mixtape: MixtapeDTO?
     @State private var tracks: [MixtapeTrackDTO] = []
@@ -28,6 +29,9 @@ struct MixtapeEditorView: View {
     @State private var coverItem: PhotosPickerItem?
     @State private var uploadingCover = false
     @State private var editMode: EditMode = .inactive
+    @State private var noteTrack: MixtapeTrackDTO?
+    @State private var sending = false
+    @State private var metadataSaveTask: Task<Bool, Never>?
 
     private var editable: Bool { mixtape?.mine ?? false }
 
@@ -41,6 +45,7 @@ struct MixtapeEditorView: View {
             }
         }
         .environment(\.editMode, $editMode)
+        .disabled(sending)
         .navigationTitle(title.isEmpty ? "Mixtape" : title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -55,20 +60,37 @@ struct MixtapeEditorView: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showShare = true } label: {
-                        Image(systemName: "person.crop.circle.badge.plus")
+                    if mixtape?.recipientId != nil {
+                        HeartableToolbarAction(title: mixtape?.sentAt == nil ? "Send" : "Sent") {
+                            Task { await sendGift() }
+                        }
+                        .disabled(sending || uploadingCover || tracks.isEmpty || mixtape?.sentAt != nil)
+                    } else {
+                        Button { showShare = true } label: {
+                            Image(systemName: "person.crop.circle.badge.plus").frame(width: 44, height: 44)
+                        }
+                        .tint(theme.palette.rose)
+                        .accessibilityLabel("Share mixtape")
                     }
-                    .tint(theme.palette.rose)
                 }
             }
         }
         .sheet(isPresented: $showSearch) {
-            AddTracksSheet(mixtapeID: mixtapeID) { await load() }
+            AddTracksSheet(mixtapeID: mixtapeID) { await load(preserveEdits: true) }
         }
         .sheet(isPresented: $showShare) {
             ShareMixtapeSheet(mixtapeID: mixtapeID)
         }
+        .sheet(item: $noteTrack) { track in
+            MixtapeSongNoteSheet(mixtapeID: mixtapeID, track: track) { await load(preserveEdits: true) }
+        }
         .task { await load() }
+        .task(id: [title, description]) {
+            guard editable, title != (mixtape?.title ?? "") || description != (mixtape?.description ?? "") else { return }
+            do { try await Task.sleep(for: .milliseconds(600)) } catch { return }
+            _ = await saveMeta()
+        }
+        .onDisappear { Task { _ = await saveMeta() } }
     }
 
     // MARK: List
@@ -108,18 +130,22 @@ struct MixtapeEditorView: View {
 
     private var header: some View {
         VStack(spacing: 12) {
+            if editable, mixtape?.recipientId != nil {
+                Text(mixtape?.sentAt == nil ? "For \(recipientName ?? "your friend") · Draft" : "Sent to \(recipientName ?? "your friend")")
+                    .font(Typography.medium(12)).foregroundStyle(theme.palette.textSecondary)
+            }
             cover
             if editable {
                 TextField("Mixtape title", text: $title)
                     .font(Typography.heading(24))
                     .foregroundStyle(theme.palette.text)
                     .multilineTextAlignment(.center)
-                    .onSubmit { Task { await saveMeta() } }
+                    .onSubmit { Task { _ = await saveMeta() } }
                 TextField("Add a description / dedication", text: $description, axis: .vertical)
                     .font(Typography.body(14))
                     .foregroundStyle(theme.palette.textSecondary)
                     .multilineTextAlignment(.center)
-                    .onSubmit { Task { await saveMeta() } }
+                    .onSubmit { Task { _ = await saveMeta() } }
             } else {
                 Text(title.isEmpty ? "Untitled mixtape" : title)
                     .font(Typography.heading(24))
@@ -183,26 +209,58 @@ struct MixtapeEditorView: View {
 
     // MARK: Data
 
-    private func load() async {
+    private func load(preserveEdits: Bool = false) async {
         let detail = await BackendAPI.shared.getMixtape(id: mixtapeID)
         loaded = true
-        guard let detail else { mixtape = nil; return }
+        guard let detail else { return }
         mixtape = detail.mixtape
         tracks = detail.tracks.sorted { ($0.position ?? 0) < ($1.position ?? 0) }
-        title = detail.mixtape.title ?? ""
-        description = detail.mixtape.description ?? ""
+        if !preserveEdits {
+            title = detail.mixtape.title ?? ""
+            description = detail.mixtape.description ?? ""
+        }
     }
 
-    private func saveMeta() async {
-        guard editable else { return }
+    private func saveMeta() async -> Bool {
+        guard editable, let owner = mixtape?.owner,
+              AccountSessionStore.currentOwnerID == owner else { return false }
         let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let savedTitle = t.isEmpty ? "Untitled mixtape" : t
+        let savedDescription = description
+        let previous = metadataSaveTask
+        let task = Task { @MainActor in
+            // Serialize saves even when a debounce task is cancelled by more
+            // typing. The last edit cannot be overwritten by an older request.
+            if let previous { _ = await previous.value }
+            guard AccountSessionStore.currentOwnerID == owner else { return false }
+            do {
+                try await BackendAPI.shared.updateMixtape(
+                    id: mixtapeID,
+                    title: savedTitle,
+                    description: savedDescription
+                )
+                mixtape?.title = savedTitle
+                mixtape?.description = savedDescription
+                return true
+            } catch {
+                banners.error("Couldn’t save the mixtape details. Try again.")
+                return false
+            }
+        }
+        metadataSaveTask = task
+        return await task.value
+    }
+
+    private func sendGift() async {
+        guard !sending, let tape = mixtape, let recipient = tape.recipientId, !tracks.isEmpty else { return }
+        sending = true
+        defer { sending = false }
+        guard await saveMeta() else { return }
         do {
-            try await BackendAPI.shared.updateMixtape(
-                id: mixtapeID,
-                title: t.isEmpty ? "Untitled mixtape" : t,
-                description: description
-            )
-        } catch { banners.error("Couldn’t save the mixtape details. Try again.") }
+            try await BackendAPI.shared.sendMixtapeGift(id: mixtapeID, friendID: recipient, expectedOwner: tape.owner)
+            await load(preserveEdits: true)
+            banners.success("Mixtape sent to \(recipientName ?? "your friend")")
+        } catch { banners.error("Couldn’t send your mixtape. Your draft is saved; try again.") }
     }
 
     private func uploadCover(_ item: PhotosPickerItem) async {
@@ -214,9 +272,9 @@ struct MixtapeEditorView: View {
                   let jpeg = ImageDownscale.jpeg(from: data) else { return }
             let url = try await BackendAPI.shared.uploadMixtapeImage(mixtapeID: mixtapeID, jpeg)
             try await BackendAPI.shared.updateMixtape(id: mixtapeID, coverUrl: .some(url))
-            // NOTE: refresh the local cover by mutating the loaded DTO so the
-            // AsyncImage re-renders without a full reload.
-            mixtape?.coverUrl = url
+            // Resolve the private reference for immediate display without
+            // replacing other unsaved editor state.
+            mixtape?.coverUrl = await BackendAPI.shared.mixtapeMediaDisplayURL(url)
         } catch {
             banners.error("Couldn’t save the mixtape cover. Try again.")
         }
@@ -224,10 +282,26 @@ struct MixtapeEditorView: View {
 
     @ViewBuilder
     private func trackRow(_ t: MixtapeTrackDTO) -> some View {
-        UnifiedTrackRow(track: unified(t)) {
-            Task { await player.play(tracks: tracks.map(unified),
-                                     startingAt: tracks.firstIndex { $0.id == t.id },
-                                     mode: prefs.mode, weights: prefs.weights) }
+        VStack(alignment: .leading, spacing: 10) {
+            UnifiedTrackRow(track: unified(t)) {
+                Task { await player.play(tracks: tracks.map(unified),
+                                         startingAt: tracks.firstIndex { $0.id == t.id },
+                                         mode: prefs.mode, weights: prefs.weights) }
+            }
+            if let note = t.note, !note.isEmpty {
+                Text(note).font(Typography.body(14)).foregroundStyle(theme.palette.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let image = t.noteImageUrl, !image.isEmpty {
+                ArtworkThumb(urlString: image, size: 180, corner: 14)
+            }
+            if editable {
+                Button { noteTrack = t } label: {
+                    Label(t.note?.isEmpty == false || t.noteImageUrl?.isEmpty == false ? "Edit note & photo" : "Add note or photo",
+                          systemImage: "square.and.pencil")
+                        .font(Typography.medium(12)).foregroundStyle(theme.palette.rose).frame(minHeight: 44)
+                }.buttonStyle(.plain)
+            }
         }
         .listRowBackground(theme.palette.bg)
         .listRowSeparatorTint(theme.palette.border)
@@ -336,6 +410,7 @@ private struct MixtapeCoverArtwork: View {
 /// results by `.key`, and adds a tapped result to the mixtape.
 private struct AddTracksSheet: View {
     @Environment(ThemeStore.self) private var theme
+    @Environment(BannerCenter.self) private var banners
     @Environment(\.dismiss) private var dismiss
 
     let mixtapeID: UUID
@@ -344,6 +419,8 @@ private struct AddTracksSheet: View {
     @State private var query = ""
     @State private var hits: [UnifiedTrack] = []
     @State private var searching = false
+    @State private var adding = false
+    @State private var added: Set<String> = []
 
     var body: some View {
         NavigationStack {
@@ -368,7 +445,7 @@ private struct AddTracksSheet: View {
                                             .lineLimit(1)
                                     }
                                     Spacer(minLength: 4)
-                                    Image(systemName: "plus.circle.fill")
+                                    Image(systemName: added.contains(t.key) ? "checkmark.circle.fill" : "plus.circle.fill")
                                         .font(.system(size: 24))
                                         .foregroundStyle(theme.palette.rose)
                                 }
@@ -376,6 +453,7 @@ private struct AddTracksSheet: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .disabled(adding || added.contains(t.key))
                             .accessibilityLabel("Add \(t.name) by \(t.artistNames)")
                         }
                     }
@@ -386,8 +464,10 @@ private struct AddTracksSheet: View {
             .navigationTitle("Add tracks")
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $query, prompt: "Search connected services")
-            .onSubmit(of: .search) { Task { await runSearch() } }
-            .task(id: query) { await runSearch() }
+            .task(id: query) {
+                do { try await Task.sleep(for: .milliseconds(300)) } catch { return }
+                await runSearch()
+            }
         }
         .heartableSheetChrome()
     }
@@ -400,18 +480,23 @@ private struct AddTracksSheet: View {
         var merged: [String: UnifiedTrack] = [:]
         var order: [String] = []
         for provider in await ProviderRegistry.connected() {
+            if Task.isCancelled { return }
             for t in await provider.search(q) where merged[t.key] == nil {
                 merged[t.key] = t
                 order.append(t.key)
             }
         }
         // Guard against a stale result from an earlier query.
-        guard q == query.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
+        guard !Task.isCancelled, q == query.trimmingCharacters(in: .whitespacesAndNewlines) else { return }
         hits = order.compactMap { merged[$0] }
     }
 
     private func add(_ t: UnifiedTrack) async {
-        try? await BackendAPI.shared.addMixtapeTrack(
+        guard !adding else { return }
+        adding = true
+        defer { adding = false }
+        do {
+            try await BackendAPI.shared.addMixtapeTrack(
             mixtapeID: mixtapeID,
             trackUri: t.uri,
             trackName: t.name,
@@ -419,7 +504,9 @@ private struct AddTracksSheet: View {
             albumArt: t.albumArt?.absoluteString,
             durationMs: t.durationMs
         )
-        await onAdded()
+            added.insert(t.key)
+            await onAdded()
+        } catch { banners.error("Couldn’t add that song. Try again.") }
     }
 }
 

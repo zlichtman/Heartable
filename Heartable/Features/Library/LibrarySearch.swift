@@ -26,6 +26,7 @@ struct SearchArtistRoute: Hashable {
 /// communicates refinement without making rows thrash provider by provider.
 struct LibrarySearchResultsView: View {
     @Environment(ThemeStore.self) private var theme
+    @Environment(LibrarySessionStore.self) private var librarySession
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     let master: MasterLibraryStore
     /// User provider priority (from LibrarySortStore) for best-source routing.
@@ -71,7 +72,10 @@ struct LibrarySearchResultsView: View {
         return "\(selectedProviders.count) apps"
     }
     private var filteredIsEmpty: Bool {
-        tracks.isEmpty && artists.isEmpty && playlists.isEmpty && profiles.isEmpty
+        tracks.isEmpty && artists.isEmpty && playlists.isEmpty && profiles.isEmpty && shows.isEmpty
+    }
+    private var shows: [WSUMShow] {
+        selectedType == .all && selectedProviders.contains(.wsum) ? results.shows : []
     }
     private var visibleTracks: [MasterTrack] {
         selectedType == .all ? Array(tracks.prefix(8)) : tracks
@@ -220,12 +224,22 @@ struct LibrarySearchResultsView: View {
                 if !tracks.isEmpty {
                     sectionHeader("Songs", count: tracks.count, type: .songs, shown: visibleTracks.count)
                     ForEach(visibleTracks) { track in
-                        MasterTrackRow(
+                        if let source = track.source(for: .wsum),
+                           let station = FeaturedRadioStations.station(id: source.providerTrackID) {
+                            RadioStationRow(station: station, saved: librarySession.savedRadio)
+                        } else {
+                            MasterTrackRow(
                             track: track,
                             providerOrder: providerOrder,
                             preferredProvider: selectedProviders.count == 1 ? selectedProviders.first : nil
                         )
+                        }
                     }
+                }
+                if !shows.isEmpty {
+                    Text("Shows").font(Typography.semibold(13)).foregroundStyle(theme.palette.textMuted)
+                        .padding(.top, 20).padding(.bottom, 12)
+                    ForEach(shows.prefix(20)) { WSUMShowRow(show: $0).padding(.vertical, 8) }
                 }
                 if !artists.isEmpty {
                     sectionHeader(

@@ -20,7 +20,6 @@ struct PlaylistDetailView: View {
     @State private var sortReversed = false
     @State private var showingSortOptions = false
     @State private var rotationID = UUID()
-    @State private var isLandscape = false
     @State private var coverSelection: Int? = 0
 
     private var tracks: [UnifiedTrack] {
@@ -89,45 +88,45 @@ struct PlaylistDetailView: View {
     }
 
     var body: some View {
-        ZStack {
-            // Retain the list in the hierarchy so rotation cannot lose its
-            // scroll position, sort selection, or cache-backed load task.
-            trackList
-                .opacity(isLandscape && !tracks.isEmpty ? 0 : 1)
-                .allowsHitTesting(!isLandscape || tracks.isEmpty)
-                .accessibilityHidden(isLandscape && !tracks.isEmpty)
-            if isLandscape && !tracks.isEmpty {
-                PlaylistCoverBrowser(tracks: displayedTracks, selection: $coverSelection)
-            }
-        }
-        .navigationTitle(playlist.name)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Text(playlist.name)
-                    .font(Typography.semibold(15))
-                    .foregroundStyle(theme.palette.text)
-                    .lineLimit(1)
-                    .opacity(showBarTitle || isLandscape ? 1 : 0)
-                    .animation(.easeInOut(duration: 0.18), value: showBarTitle)
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { Task { await playAll() } } label: {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 18, weight: .semibold))
-                        .frame(width: 44, height: 44)
+        GeometryReader { geometry in
+            let isLandscape = geometry.size.width > geometry.size.height
+            ZStack {
+                // Retain the list in the hierarchy so rotation cannot lose its
+                // scroll position, sort selection, or cache-backed load task.
+                trackList
+                    .opacity(isLandscape && !tracks.isEmpty ? 0 : 1)
+                    .allowsHitTesting(!isLandscape || tracks.isEmpty)
+                    .accessibilityHidden(isLandscape && !tracks.isEmpty)
+                if isLandscape && !tracks.isEmpty {
+                    PlaylistCoverBrowser(tracks: displayedTracks, selection: $coverSelection)
                 }
-                .tint(theme.palette.rose)
-                .disabled(loading || tracks.isEmpty)
-                .accessibilityLabel(isLandscape ? "Play selected song" : "Play playlist")
-                .accessibilityIdentifier("playlist.playAll")
             }
-        }
-        .onGeometryChange(for: Bool.self) { geometry in
-            geometry.size.width > geometry.size.height
-        } action: { landscape in
-            isLandscape = landscape
-            if landscape { showingSortOptions = false }
+            .navigationTitle(playlist.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text(playlist.name)
+                        .font(Typography.semibold(15))
+                        .foregroundStyle(theme.palette.text)
+                        .lineLimit(1)
+                        .opacity(showBarTitle || isLandscape ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.18), value: showBarTitle)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { Task { await playAll(landscape: isLandscape) } } label: {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                    }
+                    .tint(theme.palette.rose)
+                    .disabled(loading || tracks.isEmpty)
+                    .accessibilityLabel(isLandscape ? "Play selected song" : "Play playlist")
+                    .accessibilityIdentifier("playlist.playAll")
+                }
+            }
+            .onChange(of: isLandscape) {
+                if isLandscape { showingSortOptions = false }
+            }
         }
         .onAppear { PlaylistRotation.setVisible(true, id: rotationID) }
         .onDisappear { PlaylistRotation.setVisible(false, id: rotationID) }
@@ -378,10 +377,10 @@ struct PlaylistDetailView: View {
         await playlistTracks.load(playlist, force: force)
     }
 
-    private func playAll() async {
+    private func playAll(landscape: Bool) async {
         guard !tracks.isEmpty else { return }
         sortStore.recordPlayed(playlist.key)   // powers the Library "Recent" sort
-        if isLandscape, let index = VinylShelfLayout.validSelection(coverSelection, count: displayedTracks.count) {
+        if landscape, let index = VinylShelfLayout.validSelection(coverSelection, count: displayedTracks.count) {
             await player.play(tracks: displayedTracks, startingAt: index, mode: prefs.mode, weights: prefs.weights)
         } else {
             await player.play(tracks: displayedTracks, mode: prefs.mode, weights: prefs.weights)

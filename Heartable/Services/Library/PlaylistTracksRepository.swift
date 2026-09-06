@@ -67,12 +67,20 @@ final class PlaylistTracksRepository {
     }
 
     private var entries: [String: Entry] = [:]
-    private var inFlight: [String: Task<[UnifiedTrack], Never>] = [:]
+    private var inFlight: [String: Task<ProviderRead<UnifiedTrack>, Never>] = [:]
+    private let fetch: @Sendable (UnifiedPlaylist) async -> ProviderRead<UnifiedTrack>
     private var lifecycleID = UUID()
     private var didHydrate = false
     private var hydratedOwnerID: UUID?
     private var hydrationTask: Task<Snapshot?, Never>?
     private let cacheIO = CacheIO()
+    private let persistenceEnabled: Bool
+
+    init(fetch: (@Sendable (UnifiedPlaylist) async -> ProviderRead<UnifiedTrack>)? = nil,
+         persistenceEnabled: Bool = true) {
+        self.fetch = fetch ?? Self.fetchTracks
+        self.persistenceEnabled = persistenceEnabled
+    }
 
     private(set) var loadingKeys: Set<String> = []
     private(set) var refreshingKeys: Set<String> = []
@@ -90,6 +98,7 @@ final class PlaylistTracksRepository {
     nonisolated static let versionedSafetyWindow: TimeInterval = 7 * 24 * 60 * 60
 
     func hydrate() async {
+        guard persistenceEnabled else { return }
         guard let ownerID = AccountSessionStore.currentOwnerID else { return }
         if didHydrate, hydratedOwnerID == ownerID { return }
         let requestID = lifecycleID
@@ -215,7 +224,7 @@ final class PlaylistTracksRepository {
 
         let requestLifecycleID = lifecycleID
         var nextIndex = 0
-        var active: [(playlist: UnifiedPlaylist, task: Task<[UnifiedTrack], Never>)] = []
+        var active: [(playlist: UnifiedPlaylist, task: Task<ProviderRead<UnifiedTrack>, Never>)] = []
         let concurrency = max(1, maxConcurrent)
 
         func enqueueNext() {
@@ -302,7 +311,7 @@ final class PlaylistTracksRepository {
         hydrationTask = nil
     }
 
-    private func beginFetch(_ playlist: UnifiedPlaylist) -> Task<[UnifiedTrack], Never> {
+    private func beginFetch(_ playlist: UnifiedPlaylist) -> Task<ProviderRead<UnifiedTrack>, Never> {
         let key = playlist.key
         if let existing = inFlight[key] { return existing }
 
@@ -313,30 +322,21 @@ final class PlaylistTracksRepository {
         }
         failedKeys.remove(key)
 
-        let task = Task.detached(priority: .utility) {
-            await Self.fetchTracks(for: playlist)
-        }
+        let fetch = fetch
+        let task = Task.detached(priority: .utility) { await fetch(playlist) }
         inFlight[key] = task
         return task
     }
 
-    private func apply(_ loaded: [UnifiedTrack], to playlist: UnifiedPlaylist) {
+    private func apply(_ result: ProviderRead<UnifiedTrack>, to playlist: UnifiedPlaylist) {
         let key = playlist.key
         inFlight[key] = nil
         loadingKeys.remove(key)
         refreshingKeys.remove(key)
 
-        // Adapters currently return [] for both failure and an empty playlist.
-        // Positive catalog counts are unambiguously a failed read. For providers
-        // without revisions/counts (notably MusicKit), preserve non-empty
-        // last-good content rather than turning a transient failure into data loss.
-        if loaded.isEmpty,
-           playlist.trackCount > 0
-            || (
-                playlist.contentRevision == nil
-                    && entries[key]?.tracks.isEmpty == false
-                    && playlist.trackCount == 0
-            ) {
+        // Only a complete successful read can replace the snapshot. Keep its
+        // revision, timestamp, order and playable URIs untouched on failure.
+        guard case .success(let loaded) = result else {
             failedKeys.insert(key)
             return
         }
@@ -362,7 +362,7 @@ final class PlaylistTracksRepository {
     }
 
     private func persist() async {
-        guard let ownerID = hydratedOwnerID,
+        guard persistenceEnabled, let ownerID = hydratedOwnerID,
               AccountSessionStore.currentOwnerID == ownerID else { return }
         await cacheIO.save(
             Snapshot(entries: entries),
@@ -372,22 +372,14 @@ final class PlaylistTracksRepository {
 
     private nonisolated static func fetchTracks(
         for playlist: UnifiedPlaylist
-    ) async -> [UnifiedTrack] {
+    ) async -> ProviderRead<UnifiedTrack> {
         if playlist.isMixtape {
             guard let id = UUID(uuidString: playlist.playlistID),
-                  let detail = await BackendAPI.shared.getMixtape(id: id) else { return [] }
-            return detail.tracks.map(mapMixtapeTrack)
+                  let detail = await BackendAPI.shared.getMixtape(id: id) else { return .unavailable }
+            return .success(detail.tracks.map(mapMixtapeTrack))
         }
         let provider = ProviderRegistry.provider(for: playlist.providerID)
-        let first = await provider
-            .playlistTracks(playlist.playlistID)
-        guard first.isEmpty, playlist.trackCount > 0 else { return first }
-
-        // One short retry smooths over token refresh/rate-limit races during the
-        // initial bounded fan-out without turning a persistent provider failure
-        // into an endless loading loop.
-        try? await Task.sleep(for: .milliseconds(450))
-        return await provider.playlistTracks(playlist.playlistID)
+        return await provider.readPlaylistTracks(playlist.playlistID)
     }
 
     private nonisolated static func mapMixtapeTrack(_ track: MixtapeTrackDTO) -> UnifiedTrack {

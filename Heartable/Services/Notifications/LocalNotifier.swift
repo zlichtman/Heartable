@@ -9,27 +9,23 @@ import UserNotifications
 /// Two kinds live here:
 /// - `send(title:body:)` — an immediate one-shot, used by features as things
 ///   happen (e.g. the backups feature fires "Backup complete").
-/// - the weekly leaderboard digest — a repeating calendar notification kept in
+/// - the optional weekly reminder — a repeating calendar notification kept in
 ///   sync with the user's preferences.
 ///
 /// Everything reads authorization status and the `@AppStorage`-backed prefs from
 /// `UserDefaults` before doing anything, and no-ops gracefully when notifications
 /// are not allowed. Safe to call from a `@MainActor` context.
+@MainActor
 enum LocalNotifier {
     // Notification header icons belong to iOS, not this content payload.
     // ThemeStore updates UIApplication's alternate icon. Do not attach a fake
     // sender avatar or delete/repost delivered notifications to force an icon
     // refresh: neither is a supported app-icon cache invalidation mechanism.
 
-    // MARK: - Preference keys (mirror the @AppStorage keys in NotificationsView)
-
-    private enum Key {
-        static let allow = "heartable.notifications.allow"
-        static let weeklyLeaderboard = "heartable.notifications.weeklyLeaderboard"
-    }
-
     /// Stable identifier for the single repeating weekly digest request.
-    private static let weeklyDigestID = "heartable.notifications.weeklyLeaderboard.digest"
+    private static let weeklyDigestID = HeartableNotificationCategory.weeklyReminder.rawValue
+    private static var scheduleRevision: UInt = 0
+    private static var scheduleTask: Task<Void, Never>?
 
     // MARK: - Immediate one-shot
 
@@ -41,7 +37,8 @@ enum LocalNotifier {
         categoryIdentifier: String = "heartable.general"
     ) {
         Task {
-            guard prefAllow() else { return }
+            let category = HeartableNotificationCategory.resolve(categoryIdentifier)
+            guard HeartableNotificationPreferences.read().allows(category) else { return }
             let center = UNUserNotificationCenter.current()
             let settings = await center.notificationSettings()
             switch settings.authorizationStatus {
@@ -54,7 +51,7 @@ enum LocalNotifier {
                 // during an unrelated action; the Notifications screen remains
                 // the contextual place to opt into normal alerts.
                 let granted = (try? await center.requestAuthorization(
-                    options: [.alert, .badge, .sound, .provisional]
+                    options: [.alert, .sound, .provisional]
                 )) ?? false
                 guard granted else { return }
             case .denied:
@@ -62,11 +59,15 @@ enum LocalNotifier {
             @unknown default:
                 return
             }
+            // Permission UI can suspend this task while preferences change.
+            let preferences = HeartableNotificationPreferences.read()
+            guard preferences.allows(category) else { return }
             let content = UNMutableNotificationContent()
             content.title = title
             content.body = body
-            content.sound = .default
+            content.sound = preferences.playsSound(for: category) ? .default : nil
             content.categoryIdentifier = categoryIdentifier
+            content.threadIdentifier = category.threadIdentifier
             content.interruptionLevel = .active
             let request = UNNotificationRequest(
                 identifier: UUID().uuidString,
@@ -80,34 +81,10 @@ enum LocalNotifier {
 
     // MARK: - Weekly leaderboard digest
 
-    /// Schedule the repeating weekly leaderboard digest (Sunday 6pm) with a stable
-    /// identifier, but only when permission is authorized and both the master
-    /// `allow` and the `weeklyLeaderboard` prefs are on. Replaces any existing one.
+    /// Keep the existing entry point for launch callers. This is an opt-in
+    /// Sunday 6pm reminder, not a claim that new listening data is available.
     static func scheduleWeeklyLeaderboardDigest() {
-        Task {
-            guard await isAuthorized(), prefAllow(), prefWeekly() else { return }
-
-            let content = UNMutableNotificationContent()
-            content.title = "Your weekly leaderboard"
-            content.body = "See how you and your friends ranked this week on Heartable."
-            content.sound = .default
-
-            var components = DateComponents()
-            components.weekday = 1 // Sunday (1 = Sunday in Gregorian calendar)
-            components.hour = 18
-            components.minute = 0
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
-
-            let request = UNNotificationRequest(
-                identifier: weeklyDigestID,
-                content: content,
-                trigger: trigger
-            )
-            let center = UNUserNotificationCenter.current()
-            // Clear the prior pending request so re-scheduling never stacks duplicates.
-            center.removePendingNotificationRequests(withIdentifiers: [weeklyDigestID])
-            try? await center.add(request)
-        }
+        syncScheduledFromPrefs()
     }
 
     /// Remove the pending weekly digest by its stable identifier.
@@ -119,13 +96,64 @@ enum LocalNotifier {
     /// Reconcile the scheduled weekly digest against the current prefs + auth
     /// status. Safe to call at launch and whenever a relevant toggle changes.
     static func syncScheduledFromPrefs() {
-        Task {
-            if await isAuthorized(), prefAllow(), prefWeekly() {
-                scheduleWeeklyLeaderboardDigest()
-            } else {
-                cancelWeeklyLeaderboardDigest()
-            }
+        scheduleRevision &+= 1
+        guard scheduleTask == nil else { return }
+        scheduleTask = Task {
+            defer { scheduleTask = nil }
+            var appliedRevision: UInt
+            repeat {
+                appliedRevision = scheduleRevision
+                await reconcileWeeklyReminder()
+            } while appliedRevision != scheduleRevision
         }
+    }
+
+    private static func reconcileWeeklyReminder() async {
+        let authorized = await isAuthorized()
+        let preferences = HeartableNotificationPreferences.read()
+        guard authorized, preferences.allows(.weeklyReminder) else {
+            cancelWeeklyLeaderboardDigest()
+            return
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = "Your week in music"
+        content.body = "Open Heartable for your weekly recap and friends’ leaderboard."
+        content.sound = preferences.playsSound(for: .weeklyReminder) ? .default : nil
+        content.categoryIdentifier = HeartableNotificationCategory.weeklyReminder.rawValue
+        content.threadIdentifier = HeartableNotificationCategory.weeklyReminder.threadIdentifier
+
+        var components = DateComponents()
+        components.weekday = 1 // Sunday (1 = Sunday in Gregorian calendar)
+        components.hour = 18
+        components.minute = 0
+        let request = UNNotificationRequest(
+            identifier: weeklyDigestID,
+            content: content,
+            trigger: UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+        )
+        let center = UNUserNotificationCenter.current()
+        // Adding the same identifier replaces it atomically; removing first
+        // creates an avoidable gap and races another preference update.
+        try? await center.add(request)
+        // A preference change can race the asynchronous add. Never leave a
+        // reminder queued after its own switch or the master was turned off.
+        if !HeartableNotificationPreferences.read().allows(.weeklyReminder) {
+            cancelWeeklyLeaderboardDigest()
+        }
+    }
+
+    /// Re-check preferences at presentation time as well as enqueue time. This
+    /// covers already-queued local requests when settings change in the app.
+    nonisolated static func foregroundOptions(
+        categoryIdentifier: String,
+        preferences: HeartableNotificationPreferences = .read()
+    ) -> UNNotificationPresentationOptions {
+        let category = HeartableNotificationCategory.resolve(categoryIdentifier)
+        guard preferences.allows(category) else { return [] }
+        var options: UNNotificationPresentationOptions = [.banner, .list]
+        if preferences.playsSound(for: category) { options.insert(.sound) }
+        return options
     }
 
     // MARK: - Helpers
@@ -136,16 +164,5 @@ enum LocalNotifier {
         case .authorized, .provisional, .ephemeral: return true
         default: return false
         }
-    }
-
-    /// `@AppStorage` defaults registered values to their declared default only at
-    /// the property wrapper; raw `UserDefaults` returns `false`/`nil` until first
-    /// write. These prefs default to `true` in the UI, so treat "unset" as `true`.
-    private static func prefAllow() -> Bool {
-        UserDefaults.standard.object(forKey: Key.allow) as? Bool ?? true
-    }
-
-    private static func prefWeekly() -> Bool {
-        UserDefaults.standard.object(forKey: Key.weeklyLeaderboard) as? Bool ?? true
     }
 }

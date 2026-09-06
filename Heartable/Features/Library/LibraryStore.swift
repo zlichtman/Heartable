@@ -162,52 +162,32 @@ final class LibraryStore {
             refreshing = false
         }
 
-        async let top = gather(providers) { await $0.topTracks(range: .mediumTerm, limit: 50) }
+        async let top = ProviderCacheMerge.gather(providers) { await $0.readTopTracks(range: .mediumTerm, limit: 50) }
         // High cap so the master Liked list pulls a full library (Spotify pages
         // 50/request until exhausted), not just the first page.
-        async let liked = gather(providers) { await $0.likedTracks(limit: 10000) }
-        async let pls = gatherPlaylists(providers)
+        async let liked = ProviderCacheMerge.gather(providers) { await $0.readLikedTracks(limit: 10000) }
+        async let pls = ProviderCacheMerge.gather(providers) { await $0.readPlaylists() }
         async let tapes = BackendAPI.shared.listMixtapes()
 
-        let freshTop = dedupeTracks(await top)
-        let freshLiked = dedupeTracks(await liked)
+        let topReads = await top
+        let likedReads = await liked
         let mixtapeList = await tapes
         let mixtapes = (mixtapeList.mine + mixtapeList.shared).map(Self.mapMixtape)
-        let freshProviderPlaylists = await pls
+        let playlistReads = await pls
         guard lifecycleID == requestID,
               AccountSessionStore.currentOwnerID == ownerID else { return }
 
-        // Non-empty wins: never overwrite good cached data with an empty result
-        // (an empty fetch almost always means a transient token/network failure,
-        // not that the user's library is actually empty).
-        if providers.isEmpty {
-            // At this point the caller has completed a real connection probe, so
-            // empty means disconnected rather than "not checked yet".
-            topTracks = []
-            likedTracks = []
-        } else {
-            // A disconnected provider must disappear even when every currently
-            // connected provider legitimately returns an empty top/liked set.
-            topTracks = topTracks.filter { providerIDs.contains($0.providerID) }
-            likedTracks = likedTracks.filter { providerIDs.contains($0.providerID) }
-            if !freshTop.isEmpty {
-                topTracks = preservingTrackArtwork(freshTop, cached: topTracks)
-            }
-            if !freshLiked.isEmpty {
-                likedTracks = preservingTrackArtwork(freshLiked, cached: likedTracks)
-            }
-        }
-        if !freshProviderPlaylists.isEmpty || providers.isEmpty {
-            playlists = mixtapes + preservingPlaylistArtwork(
-                freshProviderPlaylists,
-                cached: playlists
-            )
-        } else {
-            // Provider playlists failed to load — keep the cached ones, refresh tapes.
-            playlists = mixtapes + playlists.filter {
-                !$0.isMixtape && providerIDs.contains($0.providerID)
-            }
-        }
+        let orderedIDs = providers.map(\.id)
+        topTracks = preservingTrackArtwork(dedupeTracks(ProviderCacheMerge.merge(
+            cached: topTracks, providers: orderedIDs, reads: topReads, providerID: { $0.providerID }
+        )), cached: topTracks)
+        likedTracks = preservingTrackArtwork(dedupeTracks(ProviderCacheMerge.merge(
+            cached: likedTracks, providers: orderedIDs, reads: likedReads, providerID: { $0.providerID }
+        )), cached: likedTracks)
+        playlists = mixtapes + preservingPlaylistArtwork(ProviderCacheMerge.merge(
+            cached: playlists.filter { !$0.isMixtape }, providers: orderedIDs,
+            reads: playlistReads, providerID: { $0.providerID }
+        ), cached: playlists)
 
         let refreshedTracks = topTracks + likedTracks
         let cachedImages = artistImageCache
@@ -438,15 +418,6 @@ final class LibraryStore {
         await withTaskGroup(of: [UnifiedTrack].self) { group in
             for p in providers { group.addTask { await op(p) } }
             var all: [UnifiedTrack] = []
-            for await chunk in group { all.append(contentsOf: chunk) }
-            return all
-        }
-    }
-
-    private func gatherPlaylists(_ providers: [MusicProvider]) async -> [UnifiedPlaylist] {
-        await withTaskGroup(of: [UnifiedPlaylist].self) { group in
-            for p in providers { group.addTask { await p.playlists() } }
-            var all: [UnifiedPlaylist] = []
             for await chunk in group { all.append(contentsOf: chunk) }
             return all
         }

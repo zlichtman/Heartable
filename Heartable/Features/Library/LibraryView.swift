@@ -195,6 +195,7 @@ struct LibraryView: View {
                 // the playlists list (not a row inside the list).
                 if browseMode == .playlists {
                     likedBar
+                    radioBar
                 }
                 if store.loading && store.playlists.isEmpty {
                     loadingRow
@@ -246,6 +247,22 @@ struct LibraryView: View {
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 16)
+    }
+
+    private var radioBar: some View {
+        NavigationLink { RadioLibraryView(saved: librarySession.savedRadio) } label: {
+            HStack(spacing: 12) {
+                ProviderLogo(id: .wsum, size: 34)
+                Text("Radio").font(Typography.semibold(14)).foregroundStyle(theme.palette.text)
+                Spacer()
+                if !librarySession.savedRadio.ids.isEmpty {
+                    Text("\(librarySession.savedRadio.ids.count) saved")
+                        .font(Typography.body(12)).foregroundStyle(theme.palette.textSecondary)
+                }
+                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(theme.palette.textMuted)
+            }.frame(minHeight: 44).contentShape(Rectangle())
+        }.buttonStyle(.plain).padding(.horizontal, 24)
     }
 
     /// Mode toggle on the left; sort + layout controls on the right (Playlists only).
