@@ -1,0 +1,407 @@
+import SwiftUI
+
+/// Cache-backed playlist list and landscape sleeve browser. The primary Play
+/// action stays in the navigation bar opposite Back in either orientation.
+struct PlaylistDetailView: View {
+    @AppStorage(SongListStyle.storageKey) private var listStyle: SongListStyle = .classic
+    @Environment(ThemeStore.self) private var theme
+    @Environment(PlayerStore.self) private var player
+    @Environment(PlaybackPrefsStore.self) private var prefs
+    @Environment(LibrarySortStore.self) private var sortStore
+    @Environment(PlaylistTracksRepository.self) private var playlistTracks
+
+    let playlist: UnifiedPlaylist
+
+    /// True once the hero has scrolled off — the playlist name then takes over
+    /// the nav bar (the Apple Music handoff), so context is never lost.
+    @State private var showBarTitle = false
+    /// Display-only ordering of the visible rows. Separate from playback order,
+    /// which stays driven by `prefs.mode` / `prefs.order(...)`.
+    @State private var sort: TrackSort = .original
+    @State private var sortReversed = false
+    @State private var showingSortOptions = false
+    @State private var rotationID = UUID()
+    @State private var coverSelection: Int? = 0
+
+    private var tracks: [UnifiedTrack] {
+        playlistTracks.tracks(for: playlist)
+    }
+
+    private var loading: Bool {
+        tracks.isEmpty
+            && !playlistTracks.didFail(playlist)
+            && (
+                !playlistTracks.hasResolved(playlist)
+                    || playlistTracks.isInitiallyLoading(playlist)
+            )
+    }
+
+    /// How the visible track rows are ordered (not the playback order).
+    private enum TrackSort: String, CaseIterable, Identifiable {
+        case original = "Original order"
+        case title = "Title"
+        case artist = "Artist"
+        case album = "Album"
+        case dateAdded = "Date added"
+        case duration = "Duration"
+
+        var id: String { rawValue }
+        var short: String {
+            switch self {
+            case .original: "Order"
+            case .title: "Title"
+            case .artist: "Artist"
+            case .album: "Album"
+            case .dateAdded: "Added"
+            case .duration: "Time"
+            }
+        }
+        var icon: String {
+            switch self {
+            case .original: "list.number"
+            case .title: "textformat"
+            case .artist: "music.mic"
+            case .album: "square.stack"
+            case .dateAdded: "calendar"
+            case .duration: "clock"
+            }
+        }
+    }
+
+    /// Rows in the chosen display order. `original` and `dateAdded` both use the
+    /// service's native order (which for playlists/liked reflects when a track was
+    /// added); the reverse toggle flips any of them.
+    private var displayedTracks: [UnifiedTrack] {
+        let base: [UnifiedTrack]
+        switch sort {
+        case .original, .dateAdded:
+            base = tracks
+        case .title:
+            base = tracks.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        case .artist:
+            base = tracks.sorted { $0.artistNames.localizedCaseInsensitiveCompare($1.artistNames) == .orderedAscending }
+        case .album:
+            base = tracks.sorted { ($0.album ?? "").localizedCaseInsensitiveCompare($1.album ?? "") == .orderedAscending }
+        case .duration:
+            base = tracks.sorted { $0.durationMs < $1.durationMs }
+        }
+        return sortReversed ? base.reversed() : base
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let landscape = geometry.size.width > geometry.size.height
+            ZStack {
+                theme.palette.bg.ignoresSafeArea()
+                // Keep the portrait list mounted: rotation must not restart its
+                // cache task or discard its scroll position.
+                trackList
+                    .opacity(landscape ? 0 : 1)
+                    .allowsHitTesting(!landscape)
+                    .accessibilityHidden(landscape)
+                if landscape {
+                    PlaylistVinylViewport { size in
+                        PlaylistCoverBrowser(tracks: displayedTracks, selection: $coverSelection, viewportSize: size)
+                    }
+                }
+            }
+            .toolbarBackground(theme.palette.bg, for: .navigationBar)
+            .toolbarBackground(landscape ? .visible : .automatic, for: .navigationBar)
+            .navigationTitle(playlist.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text(playlist.name)
+                        .font(Typography.semibold(15))
+                        .foregroundStyle(theme.palette.text)
+                        .lineLimit(1)
+                        .opacity(landscape || showBarTitle ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.18), value: showBarTitle)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { Task { await playAll(landscape: landscape) } } label: {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 18, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                    }
+                    .tint(theme.palette.text)
+                    .disabled(loading || tracks.isEmpty)
+                    .accessibilityLabel(landscape ? "Play selected song" : "Play playlist")
+                    .accessibilityIdentifier("playlist.playAll")
+                }
+            }
+        }
+        .background(theme.palette.bg.ignoresSafeArea())
+        .onAppear { PlaylistRotation.setVisible(true, id: rotationID) }
+        .onDisappear { PlaylistRotation.setVisible(false, id: rotationID) }
+        .tint(theme.palette.text)
+    }
+
+    private var trackList: some View {
+        List {
+            Section {
+                // The hero is the first scrolling row (not a pinned section
+                // header), so it scrolls away and the songs are fully readable.
+                hero
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+
+                if loading {
+                    HStack {
+                        Spacer()
+                        ProgressView().tint(theme.palette.rose)
+                        Spacer()
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .padding(.top, 24)
+                } else if tracks.isEmpty {
+                    // A playlist Spotify says has tracks but that came back empty is a
+                    // load failure (expired token / transient API error), not an empty
+                    // playlist — offer a retry instead of lying with "Empty playlist".
+                    VStack(spacing: 10) {
+                        Text(playlistTracks.didFail(playlist) ? "Couldn't load tracks" : "Empty playlist")
+                            .font(Typography.body(14))
+                            .foregroundStyle(theme.palette.textSecondary)
+                        if playlistTracks.didFail(playlist) {
+                            Button { Task { await load(force: true) } } label: {
+                                Text("Retry").font(Typography.semibold(14))
+                                    .foregroundStyle(.white)
+                                    .padding(.horizontal, 20).padding(.vertical, 9)
+                                    .background(theme.palette.rose)
+                                    .clipShape(Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .padding(.top, 24)
+                } else {
+                    songsHeader
+                        .listRowInsets(EdgeInsets(top: 14, leading: 18, bottom: 6, trailing: 18))
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+
+                    if listStyle == .covers {
+                        ForEach(Array(stride(from: 0, to: displayedTracks.count, by: 2)), id: \.self) { start in
+                            HStack(alignment: .top, spacing: 12) {
+                                coverGridSong(start)
+                                if start + 1 < displayedTracks.count { coverGridSong(start + 1) }
+                                else { Color.clear.frame(maxWidth: .infinity) }
+                            }
+                            .listRowBackground(Color.clear)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            .listRowSeparator(.hidden)
+                        }
+                    } else {
+                    ForEach(Array(displayedTracks.enumerated()), id: \.offset) { index, track in
+                        UnifiedTrackRow(track: track, rank: index + 1, enclosed: true) {
+                            coverSelection = index
+                            Task { await player.play(tracks: displayedTracks, startingAt: index,
+                                                     mode: prefs.mode, weights: prefs.weights) }
+                        }
+                        .listRowBackground(Color.clear)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                        .listRowSeparator(.hidden)
+                    }
+                    }
+                }
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(theme.palette.bg.ignoresSafeArea())
+        .onScrollGeometryChange(for: Bool.self) { geo in
+            geo.contentOffset.y + geo.contentInsets.top > 300
+        } action: { _, past in
+            showBarTitle = past
+        }
+        .task(id: playlist.key) { await load() }
+        .sheet(isPresented: $showingSortOptions) {
+            HeartableChoiceSheet(
+                title: "Sort tracks",
+                items: TrackSort.allCases.map { option in
+                    HeartableChoiceItem(
+                        id: option.rawValue,
+                        icon: option.icon,
+                        title: option.rawValue,
+                        isSelected: sort == option
+                    )
+                } + [
+                    HeartableChoiceItem(
+                        id: "reverse",
+                        icon: "arrow.up.arrow.down",
+                        title: "Reverse order",
+                        isSelected: sortReversed
+                    ),
+                ],
+                onCancel: { showingSortOptions = false },
+                onSelect: { item in
+                    if item.id == "reverse" {
+                        sortReversed.toggle()
+                    } else if let next = TrackSort(rawValue: item.id) {
+                        sort = next
+                    }
+                    showingSortOptions = false
+                }
+            )
+        }
+    }
+
+    private func coverGridSong(_ index: Int) -> some View {
+        UnifiedTrackRow(track: displayedTracks[index], rank: index + 1) {
+            coverSelection = index
+            Task { await player.play(tracks: displayedTracks, startingAt: index,
+                                     mode: prefs.mode, weights: prefs.weights) }
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private var hero: some View {
+        VStack(spacing: 0) {
+            cover
+                .frame(width: 220, height: 220)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .shadow(color: .black.opacity(0.25), radius: 18, y: 10)
+                .padding(.bottom, 16)
+
+            Text(playlist.name)
+                .font(Typography.heading(24))
+                .foregroundStyle(theme.palette.text)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+
+            if let desc = playlist.description, !desc.isEmpty {
+                Text(desc)
+                    .font(Typography.body(13))
+                    .foregroundStyle(theme.palette.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .padding(.top, 6)
+            }
+
+            Text(metaLine)
+                .font(Typography.semibold(12))
+                .foregroundStyle(theme.palette.textMuted)
+                .textCase(.uppercase)
+                .padding(.top, 10)
+
+            if !loading, !tracks.isEmpty {
+                controls.padding(.top, 18)
+            }
+
+            if playlistTracks.isRefreshing(playlist), !tracks.isEmpty {
+                HStack(spacing: 7) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(theme.palette.rose)
+                    Text("Checking for updates")
+                        .font(Typography.body(11))
+                        .foregroundStyle(theme.palette.textMuted)
+                }
+                .padding(.top, 10)
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(16)
+        .background(
+            theme.palette.card,
+            in: RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous)
+                .stroke(theme.palette.border, lineWidth: 1)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 14)
+    }
+
+    private var songsHeader: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("Songs")
+                .font(Typography.semibold(12))
+                .foregroundStyle(theme.palette.text)
+                .textCase(.uppercase)
+                .tracking(0.8)
+            Spacer()
+            Text("\(tracks.count)")
+                .font(Typography.body(12))
+                .foregroundStyle(theme.palette.textMuted)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(tracks.count) songs")
+    }
+
+    private var cover: some View {
+        CoverArt(
+            url: playlist.image,
+            corner: 24,
+            placeholder: "music.note.list",
+            placeholderScale: 0.22
+        )
+    }
+
+    private var controls: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: prefs.mode.symbol)
+                    .font(.system(size: 14))
+                    .foregroundStyle(theme.palette.textSecondary)
+                Text(prefs.mode.label)
+                    .font(Typography.semibold(13))
+                    .foregroundStyle(theme.palette.textSecondary)
+            }
+            Spacer(minLength: 4)
+            sortMenu
+        }
+    }
+
+    /// Display-sort affordance. Reorders only the visible rows; playback order is
+    /// unchanged (still `prefs.mode`).
+    private var sortMenu: some View {
+        Button {
+            showingSortOptions = true
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 12, weight: .semibold))
+                Text(sort.short)
+                    .font(Typography.semibold(13))
+            }
+            .foregroundStyle(theme.palette.textSecondary)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 44)
+            .background(theme.palette.surface, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Sort tracks")
+        .accessibilityValue(sort.rawValue + (sortReversed ? ", reversed" : ""))
+    }
+
+    private var metaLine: String {
+        let count = "\(tracks.count) track\(tracks.count == 1 ? "" : "s")"
+        if let owner = playlist.owner, !owner.isEmpty {
+            return "\(owner) · \(count)"
+        }
+        return count
+    }
+
+    private func load(force: Bool = false) async {
+        await playlistTracks.load(playlist, force: force)
+    }
+
+    private func playAll(landscape: Bool) async {
+        guard !tracks.isEmpty else { return }
+        sortStore.recordPlayed(playlist.key)   // powers the Library "Recent" sort
+        if landscape, let index = VinylShelfLayout.validSelection(coverSelection, count: displayedTracks.count) {
+            await player.play(tracks: displayedTracks, startingAt: index, mode: prefs.mode, weights: prefs.weights)
+        } else {
+            await player.play(tracks: displayedTracks, mode: prefs.mode, weights: prefs.weights)
+        }
+    }
+}
