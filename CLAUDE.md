@@ -430,6 +430,15 @@ the action instead of squeezing or truncating the heading.
 - Loading should preserve useful cached content. Avoid splash loops,
   spinner-only screens, flickering artwork, and layout shifts caused by focus.
 
+## Diagnostics
+
+MetricKit is the crash source that does not depend on Apple's TestFlight
+pipeline: `PerformanceDiagnostics` persists crash, hang, CPU and disk-write
+diagnostics plus days with abnormal exits (memory limit, watchdog) through
+`DiagnosticsStore` on the device, and Account shows them with per-report Share.
+Memory-limit terminations never produce a crash log anywhere else. Nothing is
+uploaded automatically; sharing is the tester's explicit action.
+
 ## Secrets and backend
 
 Local secrets live only in ignored `Secrets.xcconfig`:

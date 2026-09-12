@@ -81,6 +81,15 @@ struct AccountView: View {
                 .foregroundStyle(theme.palette.textMuted)
                 .fixedSize(horizontal: false, vertical: true)
 
+            sectionLabel("DIAGNOSTICS")
+                .padding(.top, 8)
+
+            NavigationLink { DiagnosticsView() } label: {
+                SettingsRow(icon: "stethoscope", label: "Crash and memory reports")
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Reports iOS gave Heartable about crashes, hangs, and memory-limit exits. Nothing is sent unless you share it.")
+
             sectionLabel("ACCOUNT ACTIONS")
                 .padding(.top, 8)
 
