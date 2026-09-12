@@ -66,6 +66,39 @@ final class ProviderCacheResilienceTests: XCTestCase {
         let expired = await gate.remaining(now: now.addingTimeInterval(3600))
         XCTAssertNil(expired)
     }
+
+    /// A relaunch must not forget Spotify's cooldown and start a fresh burst.
+    func testCooldownSurvivesRelaunchWhenPersisted() async {
+        let suite = "SpotifyReadBackoffTests.\(UUID().uuidString)"
+        defer { UserDefaults(suiteName: suite)?.removePersistentDomain(forName: suite) }
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        let first = SpotifyReadBackoff(persisting: true, suiteName: suite)
+        _ = await first.record("600", now: now)
+        // A new process reads the same store.
+        let relaunched = SpotifyReadBackoff(persisting: true, suiteName: suite)
+        let remaining = await relaunched.remaining(now: now.addingTimeInterval(100))
+        XCTAssertEqual(remaining, 500)
+        let resume = await relaunched.resumeDate(now: now.addingTimeInterval(100))
+        XCTAssertEqual(resume, now.addingTimeInterval(600))
+        let expired = await relaunched.remaining(now: now.addingTimeInterval(601))
+        XCTAssertNil(expired)
+        // Unpersisted instances stay isolated, as the existing tests rely on.
+        let isolated = await SpotifyReadBackoff().remaining(now: now)
+        XCTAssertNil(isolated)
+    }
+
+    /// Spotify returns `null` rows for playlists/tracks it can no longer resolve.
+    /// One such row must not turn a whole page into an unavailable read.
+    func testPagedDecodeSkipsNullRowsInsteadOfFailingThePage() throws {
+        let json = """
+        {"items":[null,{"id":"1","uri":"spotify:track:1","name":"Kept"},null],"next":null}
+        """
+        let page = try JSONDecoder().decode(Paged<SpotifyTrack>.self, from: Data(json.utf8))
+        XCTAssertEqual(page.items?.map(\.id), ["1"])
+        XCTAssertNil(page.next)
+        // A missing `items` key is still an error, never an empty library.
+        XCTAssertThrowsError(try JSONDecoder().decode(Paged<SpotifyTrack>.self, from: Data("{\"next\":null}".utf8)))
+    }
 }
 
 private actor ReadSequence {

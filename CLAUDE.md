@@ -191,14 +191,21 @@ last snapshot and playlist occurrences. Another service succeeding is never
 permission to prune a failed service. Spotify metadata honors Retry-After across
 reads; cached playback URIs remain usable without waiting for metadata refresh.
 
-Derived library caches never survive a build change or a crash inside the
-library bootstrap. `LibraryLaunchGuard` runs before any cache is decoded: the
-first launch of a new `CFBundleVersion` removes every account's library, master,
-playlist-track and top-track cache, and a decode marker left raised by a
-previous run does the same. Identity, pairings, Keychain items, backups and
-appearance are never cleared by this path. The marker covers only the cache
-decode in `prepareCachedData`; never extend it over the provider sync, which can
-run for minutes and is routinely killed by the user or Xcode.
+Derived library caches survive updates. Re-deriving them is a full provider
+pull (hundreds of Spotify pages plus a playlist traversal), which is what trips
+Spotify's rate limiter and blanks the Library, stats and backups for the whole
+cooldown. `LibraryLaunchGuard` therefore discards them in exactly one case: a
+decode marker left raised by a previous run, meaning the app died while decoding
+the cache. The marker covers only the decode in `prepareCachedData`; never
+extend it over the provider sync, which runs for minutes and is routinely killed
+by the user or Xcode, and never clear caches on a build change. Identity,
+pairings, Keychain items, backups and appearance are never touched by this path.
+
+Spotify's Retry-After cooldown persists across launches (`SpotifyReadBackoff`),
+paged pulls leave a small gap between pages, and the playlist traversal runs
+two-wide. When a requested service cannot answer, `LibraryStore.providerNotice`
+names it inline in the Library (with Spotify's resume time); cached content
+stays on screen. Playlists persist to the cache as soon as they publish.
 
 `LibrarySessionStore` owns Home library state above the tab hierarchy. Home
 navigation must never own or await playlist traversal or artist aggregation;

@@ -296,15 +296,15 @@ final class TopTracksRepository {
             finishLoading(key)
             return
         }
-        let tracks = await spotify.topTracks(range: range, limit: 100)
+        let read = await spotify.readTopTracks(range: range, limit: 100)
         guard lifecycleID == requestLifecycleID,
               hydratedOwnerID == ownerID,
               AccountSessionStore.currentOwnerID == ownerID else { return }
 
-        // Provider reads intentionally return [] for both an empty ranking and a
-        // transport/auth failure. Preserve a last-good cache rather than turning
-        // a transient Spotify failure into a false empty state.
-        if tracks.isEmpty, !(slices[key]?.tracks.isEmpty ?? true) {
+        // A failed or rate-limited read is not an empty ranking. Writing an empty
+        // slice here would persist it and freshness would then hide the retry for
+        // minutes; keep whatever is cached and let the next load try again.
+        guard case .success(let tracks) = read else {
             finishLoading(key)
             return
         }

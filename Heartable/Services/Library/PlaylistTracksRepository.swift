@@ -182,7 +182,7 @@ final class PlaylistTracksRepository {
     func synchronize(
         _ playlists: [UnifiedPlaylist],
         force: Bool = false,
-        maxConcurrent: Int = 4
+        maxConcurrent: Int = 2
     ) async {
         await hydrate()
 

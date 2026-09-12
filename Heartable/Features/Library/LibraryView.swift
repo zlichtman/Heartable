@@ -213,6 +213,9 @@ struct LibraryView: View {
                 if browseMode == .playlists {
                     likedBar
                 }
+                if let notice = store.providerNotice {
+                    providerNoticeRow(notice)
+                }
                 if store.loading && store.playlists.isEmpty {
                     loadingRow
                 } else if browseMode == .playlists {
@@ -541,6 +544,22 @@ struct LibraryView: View {
     }
 
     // MARK: Bits
+
+    private func providerNoticeRow(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.circle")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(theme.palette.rose)
+            Text(text)
+                .font(Typography.body(12))
+                .foregroundStyle(theme.palette.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("library.providerNotice")
+    }
 
     private var loadingRow: some View {
         HStack {

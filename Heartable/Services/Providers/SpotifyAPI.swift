@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let spotifyLog = Logger(subsystem: "com.zlichtman.heartable", category: "spotify")
 
 /// Thrown when Spotify Connect has no device to target. The Web API can't conjure
 /// one. Typed so the in-app device chooser/fallback path is deterministic instead
@@ -57,6 +60,11 @@ enum SpotifyAPI {
 
     /// Pages through `/me/tracks` (50/page) until `limit` is reached or there's no
     /// next page.
+    /// Spotify rate-limits on a rolling window. A cold library pull is hundreds
+    /// of pages; a small gap between pages keeps a full sync under the limit
+    /// instead of earning a multi-hour Retry-After for the whole app.
+    static let pageGap: Duration = .milliseconds(120)
+
     static func savedTracks(token: String, limit: Int) async throws -> [SpotifyTrack] {
         var out: [SpotifyTrack] = []
         var offset = 0
@@ -70,6 +78,7 @@ enum SpotifyAPI {
             out.append(contentsOf: items.compactMap(\.track))
             if page.next == nil || items.isEmpty { break }
             offset += items.count
+            try await Task.sleep(for: pageGap)
         }
         return Array(out.prefix(limit))
     }
@@ -90,6 +99,7 @@ enum SpotifyAPI {
             out.append(contentsOf: items)
             if page.next == nil || (page.items ?? []).isEmpty { break }
             offset += (page.items ?? []).count
+            try await Task.sleep(for: pageGap)
         }
         return Array(out.prefix(limit))
     }
@@ -109,6 +119,7 @@ enum SpotifyAPI {
             out.append(contentsOf: items.compactMap(\.track).filter { !$0.id.isEmpty })
             if page.next == nil || items.isEmpty { break }
             offset += items.count
+            try await Task.sleep(for: pageGap)
         }
         return out
     }
@@ -346,7 +357,9 @@ enum SpotifyAPI {
         ["Authorization": "Bearer \(token)"]
     }
 
-    private static func getJSON<T: Decodable>(_ path: String, token: String) async throws -> T {
+    private static func getJSON<T: Decodable>(
+        _ path: String, token: String, allowReauth: Bool = true
+    ) async throws -> T {
         if let remaining = await SpotifyReadBackoff.shared.remaining() {
             throw SpotifyReadBackoff.Limited(retryAfter: remaining)
         }
@@ -358,10 +371,25 @@ enum SpotifyAPI {
         let (data, resp) = try await HTTPClient.send(url, headers: bearer(token), retryRateLimits: false)
         if resp.statusCode == 429 {
             let delay = await SpotifyReadBackoff.shared.record(resp.value(forHTTPHeaderField: "Retry-After"))
+            spotifyLog.error("GET \(path, privacy: .public) -> 429; reads paused for \(Int(delay), privacy: .public)s")
             throw SpotifyReadBackoff.Limited(retryAfter: delay)
         }
         guard (200..<300).contains(resp.statusCode) else {
-            if resp.statusCode == 401 { throw ProviderError("Session expired. Please sign in again.") }
+            let detail = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])
+                .flatMap { ($0["error"] as? [String: Any])?["message"] as? String }
+            spotifyLog.error("GET \(path, privacy: .public) -> \(resp.statusCode, privacy: .public) \(detail ?? "", privacy: .public)")
+            if resp.statusCode == 401 {
+                // Spotify can retire an access token before its stated expiry
+                // (revoked grant, password change). Refresh once, then give up.
+                if allowReauth {
+                    SpotifyAuth.invalidateAccessToken()
+                    if let fresh = await SpotifyAuth.getValidAccessToken(), fresh != token {
+                        return try await getJSON(path, token: fresh, allowReauth: false)
+                    }
+                }
+                throw ProviderError("Session expired. Please sign in again.")
+            }
+            if let detail { throw ProviderError("Spotify: \(detail)") }
             throw ProviderError("Spotify API \(resp.statusCode)")
         }
         return try JSONDecoder().decode(T.self, from: data)
@@ -384,16 +412,42 @@ enum SpotifyAPI {
 }
 
 actor SpotifyReadBackoff {
-    static let shared = SpotifyReadBackoff()
+    static let shared = SpotifyReadBackoff(persisting: true)
     struct Limited: LocalizedError {
         let retryAfter: TimeInterval
         var errorDescription: String? { "Spotify is limiting requests. Showing your saved library." }
     }
+    /// Spotify's Retry-After is a promise about this app, not this process. A
+    /// relaunch must not start a fresh burst that re-trips the limiter, so the
+    /// shared gate remembers the cooldown; tests use an unpersisted instance.
+    static let storeKey = "heartable.spotify.readCooldownUntil"
     private var resumeAt: Date?
+    private let store: UserDefaults?
+
+    init(persisting: Bool = false, suiteName: String? = nil) {
+        // The defaults object is created here so it never crosses an isolation
+        // boundary; a suite name lets tests persist without touching .standard.
+        store = persisting ? (suiteName.flatMap { UserDefaults(suiteName: $0) } ?? .standard) : nil
+        if let epoch = store?.object(forKey: Self.storeKey) as? Double {
+            resumeAt = Date(timeIntervalSince1970: epoch)
+        }
+    }
 
     func remaining(now: Date = Date()) -> TimeInterval? {
         guard let resumeAt, resumeAt > now else { return nil }
         return resumeAt.timeIntervalSince(now)
+    }
+
+    /// When Spotify will accept reads again, if a cooldown is active.
+    func resumeDate(now: Date = Date()) -> Date? {
+        guard let resumeAt, resumeAt > now else { return nil }
+        return resumeAt
+    }
+
+    /// An explicit reconnect is the user's consent to try again now.
+    func clear() {
+        resumeAt = nil
+        store?.removeObject(forKey: Self.storeKey)
     }
 
     @discardableResult
@@ -411,6 +465,7 @@ actor SpotifyReadBackoff {
             }
         }
         resumeAt = max(resumeAt ?? now, now.addingTimeInterval(delay))
+        store?.set(resumeAt!.timeIntervalSince1970, forKey: Self.storeKey)
         return resumeAt!.timeIntervalSince(now)
     }
 }
@@ -580,10 +635,18 @@ struct Paged<T: Decodable>: Decodable {
     let next: String?
 
     private enum CodingKeys: String, CodingKey { case items, next }
+
+    /// Spotify emits `null` rows for playlists and tracks it can no longer
+    /// resolve. One such row must skip itself, not fail the whole page.
+    private struct LenientRow: Decodable {
+        let value: T?
+        init(from decoder: Decoder) throws { value = try? T(from: decoder) }
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         // Missing/null items is not proof that the user's library is empty.
-        items = try container.decode([T].self, forKey: .items)
+        items = try container.decode([LenientRow].self, forKey: .items).compactMap(\.value)
         next = try container.decodeIfPresent(String.self, forKey: .next)
     }
 }

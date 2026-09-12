@@ -17,18 +17,20 @@ final class LibraryLaunchGuardTests: XCTestCase {
         super.tearDown()
     }
 
-    func testBuildChangeClearsCachesOnceAndRecordsTheNewBuild() {
+    /// A TestFlight update must keep the cache-first library: re-deriving it
+    /// means a full provider pull, which is what trips Spotify's rate limiter.
+    func testBuildChangeKeepsCachesAndRecordsTheNewBuild() {
         var cleared = 0
         let first = LibraryLaunchGuard.prepareForLaunch(defaults: defaults, currentBuild: "66") { cleared += 1 }
-        XCTAssertEqual(first, .clearedForNewBuild(previous: nil))
+        XCTAssertEqual(first, .keptAcrossBuildChange(previous: nil))
         LibraryLaunchGuard.finishBootstrap(defaults: defaults)
 
         let same = LibraryLaunchGuard.prepareForLaunch(defaults: defaults, currentBuild: "66") { cleared += 1 }
         XCTAssertEqual(same, .kept)
 
         let upgraded = LibraryLaunchGuard.prepareForLaunch(defaults: defaults, currentBuild: "69") { cleared += 1 }
-        XCTAssertEqual(upgraded, .clearedForNewBuild(previous: "66"))
-        XCTAssertEqual(cleared, 2)
+        XCTAssertEqual(upgraded, .keptAcrossBuildChange(previous: "66"))
+        XCTAssertEqual(cleared, 0)
         XCTAssertEqual(defaults.string(forKey: LibraryLaunchGuard.buildStampKey), "69")
     }
 
@@ -39,7 +41,7 @@ final class LibraryLaunchGuardTests: XCTestCase {
         // No finishBootstrap: the process died while decoding or syncing.
         let relaunch = LibraryLaunchGuard.prepareForLaunch(defaults: defaults, currentBuild: "69") { cleared += 1 }
         XCTAssertEqual(relaunch, .clearedAfterAbnormalEnd)
-        XCTAssertEqual(cleared, 2)
+        XCTAssertEqual(cleared, 1)
         XCTAssertFalse(defaults.bool(forKey: LibraryLaunchGuard.bootstrapMarkerKey))
     }
 
@@ -49,7 +51,7 @@ final class LibraryLaunchGuardTests: XCTestCase {
         LibraryLaunchGuard.beginBootstrap(defaults: defaults)
         LibraryLaunchGuard.finishBootstrap(defaults: defaults)
         XCTAssertEqual(LibraryLaunchGuard.prepareForLaunch(defaults: defaults, currentBuild: "69") { cleared += 1 }, .kept)
-        XCTAssertEqual(cleared, 1)
+        XCTAssertEqual(cleared, 0)
     }
 
     func testRemoveLibraryCachesForEveryOwnerLeavesUnrelatedFiles() throws {

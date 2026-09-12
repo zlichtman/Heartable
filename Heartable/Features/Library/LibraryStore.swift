@@ -1,5 +1,8 @@
 import Foundation
 import Observation
+import os
+
+private let libraryLog = Logger(subsystem: "com.zlichtman.heartable", category: "library")
 
 /// Aggregates the master library across all connected providers: top, liked,
 /// playlists, artists, and unified search. Ported from the RN LibraryScreen logic.
@@ -38,6 +41,9 @@ final class LibraryStore {
     private(set) var artists: [ArtistAgg] = []
     private(set) var loading = false
     private(set) var refreshing = false
+    /// Why the last refresh could not reach a service, in user words. nil when
+    /// every requested provider answered. Cached content stays on screen.
+    private(set) var providerNotice: String?
 
     /// Every track found anywhere in the library, with playlist attribution.
     /// Rebuilt from the persistent playlist-content repository so the Artists tab
@@ -182,11 +188,26 @@ final class LibraryStore {
         ), cached: playlists))
         // The playlist pass has resolved: "loaded, empty" is a state, not a spinner.
         loading = false
+        for id in orderedIDs {
+            let outcome = playlistReads[id]?.items.map { "success(\($0.count))" } ?? "unavailable"
+            libraryLog.notice("playlists \(id.rawValue, privacy: .public): \(outcome, privacy: .public)")
+        }
+        providerNotice = await Self.notice(for: orderedIDs, reads: playlistReads)
+        // A kill during the minutes-long liked pull must not lose the playlist
+        // catalog; the empty provider set forces a full pass on the next launch.
+        await saveCache(providerIDs: [], ownerID: ownerID)
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
 
         let topReads = await top
         let likedReads = await liked
         guard lifecycleID == requestID,
               AccountSessionStore.currentOwnerID == ownerID else { return }
+        for id in orderedIDs {
+            let liked = likedReads[id]?.items.map { "success(\($0.count))" } ?? "unavailable"
+            let top = topReads[id]?.items.map { "success(\($0.count))" } ?? "unavailable"
+            libraryLog.notice("liked \(id.rawValue, privacy: .public): \(liked, privacy: .public); top: \(top, privacy: .public)")
+        }
 
         topTracks = preservingTrackArtwork(dedupeTracks(ProviderCacheMerge.merge(
             cached: topTracks, providers: orderedIDs, reads: topReads, providerID: { $0.providerID }
@@ -293,6 +314,7 @@ final class LibraryStore {
         libraryTracks = []
         loading = false
         refreshing = false
+        providerNotice = nil
         indexingArtists = false
         didBuildArtistIndex = false
         didHydrate = false
@@ -333,6 +355,25 @@ final class LibraryStore {
         guard AccountSessionStore.currentOwnerID == ownerID else { return }
         await rebuildArtistIndex(from: repository)
         await saveCache(providerIDs: loadedProviders ?? [], ownerID: ownerID)
+    }
+
+    /// One sentence for the Library when a requested service could not answer.
+    /// Spotify's own cooldown is named with its end time so the user knows the
+    /// library is intact and when it refreshes; anything else names the service.
+    private static func notice(
+        for providerIDs: [ProviderID],
+        reads: [ProviderID: ProviderRead<UnifiedPlaylist>]
+    ) async -> String? {
+        let failed = providerIDs.filter { reads[$0]?.items == nil }
+        guard !failed.isEmpty else { return nil }
+        if failed.contains(.spotify), let resume = await SpotifyReadBackoff.shared.resumeDate() {
+            let time = resume.formatted(date: .omitted, time: .shortened)
+            let day = Calendar.current.isDateInToday(resume) ? "" : " " + resume.formatted(date: .abbreviated, time: .omitted)
+            return "Spotify is limiting requests. Heartable will refresh at \(time)\(day). Your saved library stays available."
+        }
+        let names = failed.map { ProviderCatalog.entry($0)?.label ?? $0.rawValue }
+        let list = ListFormatter.localizedString(byJoining: names)
+        return "Couldn’t reach \(list). Showing your saved library."
     }
 
     private func saveCache(providerIDs: Set<ProviderID>, ownerID: UUID) async {

@@ -24,6 +24,9 @@ struct SpotifyProvider: MusicProvider {
 
     func connect() async throws {
         try await SpotifyAuth.signIn()
+        // A fresh grant is the user asking for their library now; a cooldown
+        // recorded by an earlier burst must not silently outlive it.
+        await SpotifyReadBackoff.shared.clear()
     }
 
     func disconnect() async {

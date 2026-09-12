@@ -137,6 +137,14 @@ enum SpotifyAuth {
         return refreshed
     }
 
+    /// Drops only the cached access token so the next read refreshes it. The
+    /// refresh token, and therefore the pairing, is untouched.
+    static func invalidateAccessToken(ownerID: UUID? = AccountSessionStore.currentOwnerID) {
+        guard let ownerID else { return }
+        AccountSessionStore.deleteKeychainValue(forKey: keyAccess, ownerID: ownerID)
+        AccountSessionStore.deleteKeychainValue(forKey: keyExpiry, ownerID: ownerID)
+    }
+
     /// Whether a Spotify session exists — i.e. we hold a refresh token. This is the
     /// source of truth for "connected": it stays true across transient access-token
     /// refresh failures (network blips, 5xx, 429) and only goes false when the

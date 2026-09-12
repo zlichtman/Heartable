@@ -100,6 +100,7 @@ final class LibrarySortStore {
     /// Loads the orderings owned by `ownerID`, or clears them when nil.
     func activate(ownerID: UUID?) {
         self.ownerID = ownerID
+        if let ownerID { Self.adoptLegacyOrderings(into: ownerID) }
         customOrder = (AccountSessionStore.defaultObject(forKey: Keys.custom, ownerID: ownerID) as? [String]) ?? []
         lastPlayed = (AccountSessionStore.defaultObject(forKey: Keys.lastPlayed, ownerID: ownerID)
             as? [String: TimeInterval]) ?? [:]
@@ -109,6 +110,19 @@ final class LibrarySortStore {
 
     /// Account shell reset: forget the previous account's orderings in memory.
     func reset() { activate(ownerID: nil) }
+
+    /// Builds before 70 stored these under device-wide keys. The first account
+    /// that activates on this device adopts them once, then the legacy keys go.
+    private static func adoptLegacyOrderings(into ownerID: UUID) {
+        let legacy = UserDefaults.standard
+        for key in [Keys.custom, Keys.providers, Keys.lastPlayed] {
+            guard let value = legacy.object(forKey: key) else { continue }
+            if AccountSessionStore.defaultObject(forKey: key, ownerID: ownerID) == nil {
+                AccountSessionStore.setDefault(value, forKey: key, ownerID: ownerID)
+            }
+            legacy.removeObject(forKey: key)
+        }
+    }
 
     /// Seed/repair so new sources still appear. Heartable Mixtapes (`.heartable`)
     /// is a normal, reorderable entry — defaults first but isn't pinned there.

@@ -129,6 +129,9 @@ final class ProvidersStore {
         let ids = await probeLiveProviders()
         guard lifecycleID == requestID else { return }
         connectedIDs = ids
+        // A credential that became usable (iCloud Keychain sync, authorization
+        // granted in Settings) is a pairing, exactly as activation treats it.
+        pairedIDs.formUnion(ids)
         reconnectRequiredIDs = pairedIDs.subtracting(ids)
         hasRefreshed = true
         refreshGeneration &+= 1
@@ -235,7 +238,8 @@ final class ProvidersStore {
     /// snapshot, whereas omitting it from the list would prune that snapshot as
     /// if the user had disconnected the service.
     var libraryProviders: [MusicProvider] {
-        ProviderRegistry.all.filter { pairedIDs.contains($0.id) }
+        let ids = pairedIDs.union(connectedIDs)
+        return ProviderRegistry.all.filter { ids.contains($0.id) }
     }
 
     // MARK: - Restoration
