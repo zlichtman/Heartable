@@ -83,8 +83,18 @@ struct RootView: View {
             resetAccountState()
             guard let userID = auth.userID else { return }
             me.activate(userID: userID)
+            librarySort.activate(ownerID: AccountSessionStore.currentOwnerID)
+            // Cached library content paints from here, after the account reset
+            // and namespace activation, and never depends on provider probing.
+            // The decode marker covers only the cache decode itself.
+            LibraryLaunchGuard.beginBootstrap()
+            async let hydration: Void = librarySession.prepareCachedData(using: playlistTracks) {
+                LibraryLaunchGuard.finishBootstrap()
+            }
             async let profile: Void = me.load(userID: userID)
             async let connections: Void = providers.activate(userID: userID)
+            await hydration
+            LibraryLaunchGuard.finishBootstrap()
             await profile
             await connections
 

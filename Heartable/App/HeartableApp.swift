@@ -64,6 +64,9 @@ struct HeartableApp: App {
 
     init() {
         RuntimeConfiguration.configure()
+        // Before any store can decode a library cache: a previous run that died
+        // inside that decode must not have its caches replayed into the same crash.
+        LibraryLaunchGuard.prepareForLaunch()
 
         // SwiftUI navigation titles render in the system font; make them use the
         // brand serif (Playfair Display) app-wide so the headings match the RN app.

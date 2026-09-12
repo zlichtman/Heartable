@@ -75,7 +75,9 @@ struct LibraryView: View {
             }
             .refreshable {
                 if !providers.hasRefreshed { await providers.refresh() }
-                await loadLibrary(force: true)
+                // Until restoration is coherent the paired set is unknown, and
+                // syncing with an empty set would prune the cached library.
+                if providers.hasRefreshed { await loadLibrary(force: true) }
                 await loadFolders()
             }
             .sheet(isPresented: $showCustomReorder) {

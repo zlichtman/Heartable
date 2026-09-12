@@ -835,11 +835,14 @@ struct EditProfileView: View {
         do {
             async let savedTask = me.loadFeaturedPlaylists(userID: userID, force: force)
             // The app shell owns library state; never spin up a second
-            // LibraryStore that re-probes providers and rewrites the cache.
-            await librarySession.synchronize(
-                providers: providers.libraryProviders,
-                playlistTracks: playlistTracks
-            )
+            // LibraryStore that re-probes providers and rewrites the cache. Before
+            // restoration is coherent the cached playlists are the answer.
+            if providers.hasRefreshed {
+                await librarySession.synchronize(
+                    providers: providers.libraryProviders,
+                    playlistTracks: playlistTracks
+                )
+            }
             let savedPlaylists = try await savedTask
             guard auth.userID == userID else { return }
 

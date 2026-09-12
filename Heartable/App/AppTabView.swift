@@ -18,7 +18,6 @@ struct AppTabView: View {
     @Environment(BannerCenter.self) private var banners
     @Environment(WeeklyRecapStore.self) private var weeklyRecap
     @Environment(LibrarySessionStore.self) private var librarySession
-    @Environment(LibrarySortStore.self) private var librarySort
     @Environment(PlaylistTracksRepository.self) private var playlistTracks
     @Environment(BackupScheduler.self) private var backupScheduler
     @Environment(\.scenePhase) private var scenePhase
@@ -55,22 +54,8 @@ struct AppTabView: View {
             FullPlayerView()
                 .heartableSheetChrome(dragIndicator: .hidden)
         }
-        // Cache hydration belongs to the stable app shell, not the Home tab.
-        // RootView owns account/provider activation so no provider is probed before
-        // the authenticated account namespace and durable manifest are restored.
-        .task {
-            // A new build, or a previous run that died while decoding these
-            // caches, must not replay stale caches into the same failure. The
-            // marker covers only the decode: a kill during the minutes-long
-            // provider sync that follows is normal and must not wipe anything.
-            LibraryLaunchGuard.prepareForLaunch()
-            LibraryLaunchGuard.beginBootstrap()
-            librarySort.activate(ownerID: AccountSessionStore.currentOwnerID)
-            await librarySession.prepareCachedData(
-                using: playlistTracks
-            )
-            LibraryLaunchGuard.finishBootstrap()
-        }
+        // RootView's ordered bootstrap hydrates the cached library; this shell
+        // only refreshes it once provider restoration reached a coherent state.
         .task(id: providers.refreshGeneration) {
             guard providers.hasRefreshed else { return }
             await librarySession.synchronize(
@@ -94,6 +79,15 @@ struct AppTabView: View {
                 // Reconcile before playback polling can qualify another listen.
                 prefs.refreshGhostMode()
                 player.start()
+                // A service that could not answer last time (rate limit, outage)
+                // gets one quiet retry on return; a still-active cooldown makes
+                // this a no-op that keeps the notice current.
+                if librarySession.library.providerNotice != nil, providers.hasRefreshed {
+                    await librarySession.synchronize(
+                        providers: providers.libraryProviders,
+                        playlistTracks: playlistTracks
+                    )
+                }
             } else {
                 player.stop()
             }

@@ -100,8 +100,12 @@ Authentication and provider restoration are one ordered bootstrap owned by
 4. `ProvidersStore` merges the cached and RLS-protected
    `provider_connections` manifest, restores safe metadata, then probes local
    credentials.
-5. The app shell hydrates cached library content and refreshes it only after
-   provider restoration reaches a coherent state.
+5. The same `RootView` bootstrap hydrates cached library content (never a tab
+   view's task, which has no defined order against the account reset); the app
+   shell refreshes it only after provider restoration reaches a coherent state.
+   An empty paired set is a prune: never pass one to a library sync before
+   `ProvidersStore.hasRefreshed`, and never stamp freshness on a pass in which
+   no provider answered.
 
 A provider pairing and a usable device credential are different states. Pairing
 intent belongs to the Heartable account in Supabase; secrets stay in an

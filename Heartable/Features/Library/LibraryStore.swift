@@ -149,6 +149,7 @@ final class LibraryStore {
 
         let providerIDs = Set(providers.map(\.id))
         if !force,
+           providerNotice == nil,
            let cachedAt,
            Date().timeIntervalSince(cachedAt) < freshnessWindow,
            loadedProviders == providerIDs,
@@ -223,6 +224,15 @@ final class LibraryStore {
         }.value
         guard lifecycleID == requestID,
               AccountSessionStore.currentOwnerID == ownerID else { return }
+        // When every requested service failed, nothing was verified: keep the
+        // derived index, do not stamp freshness, and let the next pass retry.
+        let anySuccess = orderedIDs.isEmpty || orderedIDs.contains { id in
+            playlistReads[id]?.items != nil || likedReads[id]?.items != nil || topReads[id]?.items != nil
+        }
+        guard anySuccess else {
+            libraryLog.error("no provider answered; keeping cached library and freshness untouched")
+            return
+        }
         // The playlist catalog may carry new content revisions or track counts.
         // The shared repository reconciles those immediately after this metadata
         // pass and then rebuilds the artist projection.

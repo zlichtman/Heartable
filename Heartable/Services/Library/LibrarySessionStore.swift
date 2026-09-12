@@ -21,6 +21,7 @@ final class LibrarySessionStore {
 
     private var lifecycleID = UUID()
     private var preparationTask: Task<Void, Never>?
+    private var preparationID: UUID?
     private var synchronizationTask: Task<Void, Never>?
     private var synchronizationID: UUID?
     private var synchronizationProviderIDs: Set<ProviderID> = []
@@ -36,17 +37,25 @@ final class LibrarySessionStore {
     /// Restores every local snapshot once per account. LibraryStore publishes its
     /// playlist/liked-song core as soon as the cache is decoded, before its artist
     /// projection is calculated, so Home becomes useful as early as possible.
-    func prepareCachedData(using playlistTracks: PlaylistTracksRepository) async {
+    /// `onDecoded` fires once the cached snapshots have been decoded and
+    /// published, before the artist projection is restored: that is the whole
+    /// window in which a stale cache could crash the app, so callers lower the
+    /// launch guard's marker there and nowhere later.
+    func prepareCachedData(
+        using playlistTracks: PlaylistTracksRepository,
+        onDecoded: (@MainActor () -> Void)? = nil
+    ) async {
         savedRadio.activate(ownerID: AccountSessionStore.currentOwnerID)
-        if cachedDataReady { return }
+        if cachedDataReady { onDecoded?(); return }
         if let preparationTask {
             await preparationTask.value
-            // A reset mid-flight cancels that task without publishing anything;
-            // fall through and hydrate for the current account instead.
-            if cachedDataReady || self.preparationTask != nil { return }
+            // The runner publishes and clears its own task; a reset or a cleared
+            // data set mid-flight leaves nothing published, so hydrate again.
+            if cachedDataReady || self.preparationTask != nil { onDecoded?(); return }
         }
 
         let requestID = lifecycleID
+        let runID = UUID()
         let library = library
         let master = master
         let task = Task {
@@ -56,16 +65,23 @@ final class LibrarySessionStore {
 
             await libraryHydration
             await playlistHydration
+            onDecoded?()
             guard !Task.isCancelled else { return }
             await library.restoreArtistIndex(from: playlistTracks)
             await masterHydration
         }
         preparationTask = task
+        preparationID = runID
         await task.value
 
+        // Whatever happened, this run no longer owns the slot; a later call may
+        // hydrate again. Only an uncancelled run for the live account publishes.
+        if preparationID == runID {
+            preparationTask = nil
+            preparationID = nil
+        }
         guard lifecycleID == requestID, !task.isCancelled else { return }
         cachedDataReady = true
-        preparationTask = nil
     }
 
     /// Refreshes provider metadata first, then reconciles the expensive playlist
@@ -89,6 +105,7 @@ final class LibrarySessionStore {
             if synchronizationID == activeID {
                 self.synchronizationTask = nil
                 synchronizationID = nil
+                synchronizationProviderIDs = []
                 synchronizing = false
             }
             if Self.shouldRerunSynchronization(
@@ -153,6 +170,7 @@ final class LibrarySessionStore {
         preparationTask?.cancel()
         synchronizationTask?.cancel()
         preparationTask = nil
+        preparationID = nil
         synchronizationTask = nil
         synchronizationID = nil
         synchronizationProviderIDs = []
@@ -168,6 +186,10 @@ final class LibrarySessionStore {
         savedRadio.clear(ownerID: ownerID)
         lifecycleID = UUID()
         let requestID = lifecycleID
+        preparationTask?.cancel()
+        preparationTask = nil
+        preparationID = nil
+        cachedDataReady = false
         synchronizationTask?.cancel()
         await synchronizationTask?.value
         guard lifecycleID == requestID, AccountSessionStore.currentOwnerID == ownerID else { return }
