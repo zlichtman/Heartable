@@ -383,6 +383,9 @@ final class LibraryStore {
         }
         let names = failed.map { ProviderCatalog.entry($0)?.label ?? $0.rawValue }
         let list = ListFormatter.localizedString(byJoining: names)
+        if failed.contains(.spotify), let detail = await SpotifyReadBackoff.shared.lastFailure {
+            return "Spotify answered \(detail). Showing your saved library."
+        }
         return "Couldn’t reach \(list). Showing your saved library."
     }
 

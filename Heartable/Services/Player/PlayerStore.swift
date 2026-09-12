@@ -428,10 +428,12 @@ final class PlayerStore {
                 do {
                     if wakeSpotify { throw NoActiveDeviceError() }
                     try await installSpotifyQueue(segment, token: token, positionMs: positionMs)
-                } catch is NoActiveDeviceError {
+                } catch let error where error is NoActiveDeviceError || error is SpotifyPlaybackRestrictedError {
                     // Spotify must wake its process through its supported app
                     // switch. The SDK starts the selected song and returns here;
                     // no manual Play action or empty device picker is needed.
+                    // A Web API "restriction violated" refusal takes the same
+                    // road: the SDK plays inside the Spotify app itself.
                     try await SpotifyAppRemote.shared.wakeAndPlay(track)
                     try Task.checkCancellation()
                     // App Remote can play before Connect publishes the phone.

@@ -6,6 +6,15 @@ private let spotifyLog = Logger(subsystem: "com.zlichtman.heartable", category: 
 /// Thrown when Spotify Connect has no device to target. The Web API can't conjure
 /// one. Typed so the in-app device chooser/fallback path is deterministic instead
 /// of string-matching error messages. Ported from the RN `NoActiveDeviceError`.
+/// Spotify's Web API refused to drive the current device or context
+/// ("restriction violated"). The official SDK can still start the song inside
+/// the Spotify app, so the player treats this like a missing device and hands
+/// off rather than blaming the user's subscription.
+struct SpotifyPlaybackRestrictedError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
 struct NoActiveDeviceError: LocalizedError {
     var errorDescription: String? {
         "Spotify has not exposed a playback device yet."
@@ -345,7 +354,11 @@ enum SpotifyAPI {
                 continue
             }
 
-            throw ProviderError(parsePlayError(status: resp.statusCode, data: data))
+            let message = parsePlayError(status: resp.statusCode, data: data)
+            if resp.statusCode == 403, message.localizedCaseInsensitiveContains("restriction") {
+                throw SpotifyPlaybackRestrictedError(message: message)
+            }
+            throw ProviderError(message)
         }
         // Exhausted retries without ever landing a device.
         throw NoActiveDeviceError()
@@ -378,6 +391,7 @@ enum SpotifyAPI {
             let detail = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])
                 .flatMap { ($0["error"] as? [String: Any])?["message"] as? String }
             spotifyLog.error("GET \(path, privacy: .public) -> \(resp.statusCode, privacy: .public) \(detail ?? "", privacy: .public)")
+            await SpotifyReadBackoff.shared.noteFailure("\(resp.statusCode)\(detail.map { ": \($0)" } ?? "")")
             if resp.statusCode == 401 {
                 // Spotify can retire an access token before its stated expiry
                 // (revoked grant, password change). Refresh once, then give up.
@@ -395,19 +409,38 @@ enum SpotifyAPI {
         return try JSONDecoder().decode(T.self, from: data)
     }
 
-    private static func parsePlayError(status: Int, data: Data) -> String {
+    /// Spotify's player endpoints answer 403 for several different reasons
+    /// (no Premium, a restriction on the current device or track, an account
+    /// not registered with the developer app). Report the reason Spotify gave;
+    /// a bare "Premium required" for every 403 sends a Premium user chasing the
+    /// wrong problem.
+    static func playbackFailureMessage(status: Int, data: Data) -> String {
+        let error = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["error"] as? [String: Any]
+        let message = error?["message"] as? String
+        let reason = (error?["reason"] as? String)?.uppercased()
+        if status >= 400 {
+            spotifyLog.error("playback command -> \(status, privacy: .public) \(reason ?? "", privacy: .public) \(message ?? "", privacy: .public)")
+        }
         switch status {
-        case 403: return "Spotify Premium is required to control playback."
+        case 403:
+            if reason == "PREMIUM_REQUIRED" || message?.localizedCaseInsensitiveContains("premium") == true {
+                return "Spotify says this account doesn’t have Premium, which Spotify requires for playback control."
+            }
+            if reason == "RESTRICTION_VIOLATED" || message?.localizedCaseInsensitiveContains("restriction") == true {
+                return "Spotify didn’t allow that on the current device (restriction violated). Start a song in the Spotify app, then try again."
+            }
+            if let message { return "Spotify refused playback: \(message)" }
+            return "Spotify refused playback control (403)."
         case 401: return "Session expired. Reconnect Spotify."
         case 404: return "No active Spotify device. Start playing on a device, then try again."
         default:
-            if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-               let err = obj["error"] as? [String: Any],
-               let message = err["message"] as? String {
-                return message
-            }
+            if let message { return message }
             return "Playback error (\(status))"
         }
+    }
+
+    private static func parsePlayError(status: Int, data: Data) -> String {
+        playbackFailureMessage(status: status, data: data)
     }
 }
 
@@ -447,7 +480,16 @@ actor SpotifyReadBackoff {
     /// An explicit reconnect is the user's consent to try again now.
     func clear() {
         resumeAt = nil
+        lastFailure = nil
         store?.removeObject(forKey: Self.storeKey)
+    }
+
+    /// The most recent non-2xx metadata read, as "status: Spotify's message",
+    /// so the Library can name the actual refusal instead of a generic outage.
+    private(set) var lastFailure: String?
+
+    func noteFailure(_ description: String) {
+        lastFailure = description
     }
 
     @discardableResult
