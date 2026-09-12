@@ -59,14 +59,17 @@ struct AppTabView: View {
         // RootView owns account/provider activation so no provider is probed before
         // the authenticated account namespace and durable manifest are restored.
         .task {
-            // A new build, or a previous run that died inside this bootstrap,
-            // must not replay stale caches into the same failure.
+            // A new build, or a previous run that died while decoding these
+            // caches, must not replay stale caches into the same failure. The
+            // marker covers only the decode: a kill during the minutes-long
+            // provider sync that follows is normal and must not wipe anything.
             LibraryLaunchGuard.prepareForLaunch()
             LibraryLaunchGuard.beginBootstrap()
             librarySort.activate(ownerID: AccountSessionStore.currentOwnerID)
             await librarySession.prepareCachedData(
                 using: playlistTracks
             )
+            LibraryLaunchGuard.finishBootstrap()
         }
         .task(id: providers.refreshGeneration) {
             guard providers.hasRefreshed else { return }
@@ -74,7 +77,6 @@ struct AppTabView: View {
                 providers: providers.libraryProviders,
                 playlistTracks: playlistTracks
             )
-            LibraryLaunchGuard.finishBootstrap()
             await backupScheduler.runIfDue()
         }
         .task {
@@ -93,9 +95,6 @@ struct AppTabView: View {
                 prefs.refreshGhostMode()
                 player.start()
             } else {
-                // Leaving the foreground is a normal end; a later kill by the
-                // system must not read as a crash inside library bootstrap.
-                LibraryLaunchGuard.finishBootstrap()
                 player.stop()
             }
         }

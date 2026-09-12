@@ -11,11 +11,13 @@ import os
 /// 1. **A different build.** The first launch after an update starts clean, so
 ///    a snapshot written by an older build can never crash a newer one, and a
 ///    crash loop cannot survive a TestFlight update.
-/// 2. **An abnormal end during bootstrap.** A marker is raised when library
-///    hydration begins and lowered when the first synchronization finishes or
-///    the app is backgrounded cleanly. Finding it still raised at launch means
-///    the previous run died while decoding or reconciling the library, so that
-///    data is discarded instead of being replayed into the same crash.
+/// 2. **An abnormal end while decoding.** A marker is raised just before the
+///    cached library is decoded and lowered the moment that decode has
+///    published. Finding it still raised at launch means the previous run died
+///    inside the decode itself, so that data is discarded instead of being
+///    replayed into the same crash. The marker deliberately does not cover the
+///    provider sync that follows: that can run for minutes, and a user or Xcode
+///    killing the app during it is normal, not evidence the caches are bad.
 @MainActor
 enum LibraryLaunchGuard {
     static let buildStampKey = "heartable.launch.buildStamp"
@@ -56,13 +58,12 @@ enum LibraryLaunchGuard {
         return outcome
     }
 
-    /// Hydration or the first synchronization is about to touch the caches.
+    /// The cached library is about to be decoded.
     static func beginBootstrap(defaults: UserDefaults = .standard) {
         defaults.set(true, forKey: bootstrapMarkerKey)
     }
 
-    /// The caches were decoded and reconciled, or the app left the foreground
-    /// normally; a later termination is no longer evidence of a crash.
+    /// The caches decoded and published; a later termination is not a crash here.
     static func finishBootstrap(defaults: UserDefaults = .standard) {
         defaults.set(false, forKey: bootstrapMarkerKey)
     }

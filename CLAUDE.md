@@ -194,10 +194,11 @@ reads; cached playback URIs remain usable without waiting for metadata refresh.
 Derived library caches never survive a build change or a crash inside the
 library bootstrap. `LibraryLaunchGuard` runs before any cache is decoded: the
 first launch of a new `CFBundleVersion` removes every account's library, master,
-playlist-track and top-track cache, and a bootstrap marker left raised by a
+playlist-track and top-track cache, and a decode marker left raised by a
 previous run does the same. Identity, pairings, Keychain items, backups and
-appearance are never cleared by this path. Lower the marker only after the first
-synchronization completes or the app leaves the foreground normally.
+appearance are never cleared by this path. The marker covers only the cache
+decode in `prepareCachedData`; never extend it over the provider sync, which can
+run for minutes and is routinely killed by the user or Xcode.
 
 `LibrarySessionStore` owns Home library state above the tab hierarchy. Home
 navigation must never own or await playlist traversal or artist aggregation;
