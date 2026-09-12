@@ -983,7 +983,7 @@ struct BackupsView: View {
                 try await BackendAPI.shared.importSnapshotFromCSV(name: name, rows: rows, createdAt: createdAt, expectedUserID: owner)
             }
             await reload()
-            banners.success("Imported \(result.playlistCount) playlists, \(result.trackCount) tracks.")
+            banners.success("Imported \(result.playlistCount) playlists, \(result.trackCount) tracks, \(result.likedCount) liked.")
         } catch {
             let detail = (error as? LocalizedError)?.errorDescription ?? "Please try again."
             banners.error("Import failed. \(detail)")
@@ -2005,7 +2005,8 @@ struct CSVDocument: Transferable {
 
     static var transferRepresentation: some TransferRepresentation {
         DataRepresentation(exportedContentType: .commaSeparatedText) { doc in
-            let rows = await Self.rows(for: doc.snapshot.id)
+            // A partial read is an error, never a smaller file.
+            let rows = try await Self.rows(for: doc.snapshot.id)
             return Data(Self.csv(from: rows, createdAt: doc.snapshot.createdAt).utf8)
         }
         .suggestedFileName { doc in
@@ -2017,10 +2018,10 @@ struct CSVDocument: Transferable {
 
     /// Gather every track across the snapshot's playlists, then append liked songs
     /// (empty `playlist` column so they re-import as liked, not as a playlist).
-    static func rows(for snapshotID: UUID) async -> [Row] {
-        async let playlistsFetch = BackendAPI.shared.fetchSnapshotPlaylists(snapshotID: snapshotID)
-        async let likedFetch = BackendAPI.shared.fetchSnapshotLikedTracks(snapshotID: snapshotID)
-        let playlists = await playlistsFetch
+    static func rows(for snapshotID: UUID) async throws -> [Row] {
+        async let playlistsFetch = BackendAPI.shared.requireSnapshotPlaylists(snapshotID: snapshotID)
+        async let likedFetch = BackendAPI.shared.requireSnapshotLikedTracks(snapshotID: snapshotID)
+        let playlists = try await playlistsFetch
         let playlistRows = await fetchPlaylistRows(playlists, maxConcurrent: 6)
         var rows: [Row] = []
         for (index, label, tracks) in playlistRows.sorted(by: { $0.0 < $1.0 }) {
@@ -2033,7 +2034,7 @@ struct CSVDocument: Transferable {
         }
         // Always include liked songs with an empty playlist column (the importer's
         // liked-song marker), so full snapshots export every track and round-trip.
-        let liked = await likedFetch
+        let liked = try await likedFetch
         for t in liked {
             rows.append(Row(playlist: "", name: t.trackName, artist: t.artistName,
                             album: t.albumName, uri: t.spotifyTrackUri,

@@ -1187,8 +1187,17 @@ struct BackendAPI: Sendable {
         if marker.initial_backup_at != nil { return false }
         let existing: [IdRowDTO] = try await client.from("library_snapshots")
             .select("id").eq("owner", value: userID.uuidString)
-            .limit(1).execute().value
-        if !existing.isEmpty {
+            .limit(5).execute().value
+        guard !existing.isEmpty else { return true }
+        // A snapshot row whose child inserts failed is not a baseline: it has
+        // no songs, and stamping the marker from it would end retries forever.
+        let ids = existing.map(\.id.uuidString)
+        async let likedRows: [IdRowDTO] = client.from("snapshot_liked_tracks")
+            .select("id").in("snapshot_id", values: ids).limit(1).execute().value
+        async let playlistRows: [IdRowDTO] = client.from("snapshot_playlists")
+            .select("id").in("snapshot_id", values: ids).limit(1).execute().value
+        let (liked, playlists) = try await (likedRows, playlistRows)
+        if !liked.isEmpty || !playlists.isEmpty {
             try await markInitialBackupCompleted(userID: userID)
             return false
         }

@@ -109,7 +109,13 @@ struct AppleMusicProvider: MusicProvider {
     /// deduped by unified key. "Liked" has no single MusicKit concept, so we union
     /// the saved library with the auto-created Favorites playlist.
     func likedTracks(limit: Int) async -> [UnifiedTrack] {
-        guard MusicAuthorization.currentStatus == .authorized else { return [] }
+        await readLikedTracks(limit: limit).items ?? []
+    }
+
+    /// A failed MusicKit request is `.unavailable`; a library with no saved
+    /// songs is a verified `.success([])`. Backups rely on the difference.
+    func readLikedTracks(limit: Int) async -> ProviderRead<UnifiedTrack> {
+        guard await isConnected() else { return .unavailable }
         var librarySongs: [UnifiedTrack] = []
         do {
             var request = MusicLibraryRequest<Song>()
@@ -120,7 +126,7 @@ struct AppleMusicProvider: MusicProvider {
             let response = try await request.response()
             librarySongs = Array(response.items.prefix(limit)).map(Self.mapSong)
         } catch {
-            // Keep going — Favorites alone is still useful.
+            return .unavailable
         }
 
         let favorites = await Self.favoriteSongs()
@@ -132,11 +138,15 @@ struct AppleMusicProvider: MusicProvider {
         for t in favorites + librarySongs where seen.insert(t.key).inserted {
             merged.append(t)
         }
-        return merged
+        return .success(merged)
     }
 
     func playlists() async -> [UnifiedPlaylist] {
-        guard MusicAuthorization.currentStatus == .authorized else { return [] }
+        await readPlaylists().items ?? []
+    }
+
+    func readPlaylists() async -> ProviderRead<UnifiedPlaylist> {
+        guard await isConnected() else { return .unavailable }
         do {
             let pageSize = 100
             var offset = 0
@@ -152,11 +162,11 @@ struct AppleMusicProvider: MusicProvider {
             }
             // Hide the auto-created "Favorite Songs" playlist — its tracks are
             // funneled into the unified Liked list instead (see likedTracks).
-            return playlists
+            return .success(playlists
                 .filter { !Self.isFavoritesPlaylist($0) }
-                .map(Self.mapPlaylist)
+                .map(Self.mapPlaylist))
         } catch {
-            return []
+            return .unavailable
         }
     }
 
@@ -187,7 +197,11 @@ struct AppleMusicProvider: MusicProvider {
     }
 
     func playlistTracks(_ playlistID: String) async -> [UnifiedTrack] {
-        guard MusicAuthorization.currentStatus == .authorized else { return [] }
+        await readPlaylistTracks(playlistID).items ?? []
+    }
+
+    func readPlaylistTracks(_ playlistID: String) async -> ProviderRead<UnifiedTrack> {
+        guard await isConnected() else { return .unavailable }
         do {
             // Walk the complete library in pages. The previous default request
             // only searched the first page, so playlists after it could appear in
@@ -204,19 +218,20 @@ struct AppleMusicProvider: MusicProvider {
                 if match != nil || page.count < pageSize { break }
                 offset += page.count
             }
-            guard let match else { return [] }
+            // A playlist that no longer exists is not a failed read.
+            guard let match else { return .success([]) }
 
             let detailed = try await match.with([.tracks])
-            guard var tracks = detailed.tracks else { return [] }
+            guard var tracks = detailed.tracks else { return .success([]) }
             while tracks.hasNextBatch,
                   let next = try await tracks.nextBatch(limit: 100) {
                 tracks += next
             }
             // Playlist tracks are `Track` (an enum-like wrapper); pull the Song
             // payload where present.
-            return tracks.compactMap(Self.mapTrack)
+            return .success(tracks.compactMap(Self.mapTrack))
         } catch {
-            return []
+            return .unavailable
         }
     }
 

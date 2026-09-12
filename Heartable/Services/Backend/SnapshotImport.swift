@@ -300,6 +300,7 @@ struct SnapshotPlaylistInsertDTO: Codable, Sendable {
     var name: String
     var trackCount: Int
     var imageUrl: String? = nil
+    var providerId: String = ProviderID.spotify.rawValue
 
     enum CodingKeys: String, CodingKey {
         case snapshotId = "snapshot_id"
@@ -307,6 +308,7 @@ struct SnapshotPlaylistInsertDTO: Codable, Sendable {
         case name
         case trackCount = "track_count"
         case imageUrl = "image_url"
+        case providerId = "provider_id"
     }
 }
 
@@ -320,6 +322,7 @@ struct SnapshotTrackInsertDTO: Codable, Sendable {
     var position: Int
     var albumArtUrl: String? = nil
     var durationMs: Int? = nil
+    var providerId: String = ProviderID.spotify.rawValue
 
     enum CodingKeys: String, CodingKey {
         case snapshotPlaylistId = "snapshot_playlist_id"
@@ -330,6 +333,7 @@ struct SnapshotTrackInsertDTO: Codable, Sendable {
         case position
         case albumArtUrl = "album_art_url"
         case durationMs = "duration_ms"
+        case providerId = "provider_id"
     }
 }
 
@@ -343,6 +347,7 @@ struct SnapshotLikedTrackInsertDTO: Codable, Sendable {
     var position: Int
     var albumArtUrl: String? = nil
     var durationMs: Int? = nil
+    var providerId: String = ProviderID.spotify.rawValue
 
     enum CodingKeys: String, CodingKey {
         case snapshotId = "snapshot_id"
@@ -353,6 +358,7 @@ struct SnapshotLikedTrackInsertDTO: Codable, Sendable {
         case position
         case albumArtUrl = "album_art_url"
         case durationMs = "duration_ms"
+        case providerId = "provider_id"
     }
 }
 
@@ -482,8 +488,10 @@ extension BackendAPI {
         var liked: [ImportedRow] = []
         // A snapshot's label must list only the services that actually landed in
         // it. A selected service that returns nothing (not truly connected, empty
-        // library, or a failed read) must not be tagged, so track contribution as
-        // we go and record only providers that added at least one track.
+        // library) must not be tagged, so track contribution as we go and record
+        // only providers that added at least one track. A service whose read
+        // FAILED is different: a backup that claims to cover it with zero rows
+        // would later read as deletions, so the whole capture stops instead.
         var capturedProviderIDs: [ProviderID] = []
 
         for id in providerIDs {
@@ -491,26 +499,51 @@ extension BackendAPI {
                 throw BackendError.notSignedIn
             }
             let provider = ProviderRegistry.provider(for: id)
+            let strict = Self.strictReadProviders.contains(id)
             var contributed = false
-            for pl in await provider.playlists() {
-                guard AccountSessionStore.currentOwnerID == ownerID else {
-                    throw BackendError.notSignedIn
-                }
-                let tracks = await provider.playlistTracks(pl.playlistID)
-                guard AccountSessionStore.currentOwnerID == ownerID else {
-                    throw BackendError.notSignedIn
-                }
-                guard !tracks.isEmpty else { continue }
-                playlists.append(CapturedPlaylist(playlist: pl, tracks: tracks))
-                contributed = true
-            }
-            let likedTracks = await provider.likedTracks(limit: 10_000)
+
+            // Liked songs first. On Spotify this is the read most exposed to a
+            // rate-limit cooldown; it must never be recorded as zero because the
+            // playlist traversal ahead of it spent the request budget.
+            let likedRead = await provider.readLikedTracks(limit: 10_000)
             guard AccountSessionStore.currentOwnerID == ownerID else {
                 throw BackendError.notSignedIn
             }
-            if !likedTracks.isEmpty {
-                liked.append(contentsOf: likedTracks.map(ImportedRow.init(track:)))
-                contributed = true
+            switch likedRead {
+            case .success(let likedTracks):
+                if !likedTracks.isEmpty {
+                    liked.append(contentsOf: likedTracks.map(ImportedRow.init(track:)))
+                    contributed = true
+                }
+            case .unavailable:
+                if strict { throw await Self.unreadable(id, what: "liked songs") }
+            }
+
+            let playlistsRead = await provider.readPlaylists()
+            guard AccountSessionStore.currentOwnerID == ownerID else {
+                throw BackendError.notSignedIn
+            }
+            switch playlistsRead {
+            case .success(let catalog):
+                for pl in catalog {
+                    guard AccountSessionStore.currentOwnerID == ownerID else {
+                        throw BackendError.notSignedIn
+                    }
+                    let tracksRead = await provider.readPlaylistTracks(pl.playlistID)
+                    guard AccountSessionStore.currentOwnerID == ownerID else {
+                        throw BackendError.notSignedIn
+                    }
+                    switch tracksRead {
+                    case .success(let tracks):
+                        guard !tracks.isEmpty else { continue }
+                        playlists.append(CapturedPlaylist(playlist: pl, tracks: tracks))
+                        contributed = true
+                    case .unavailable:
+                        if strict { throw await Self.unreadable(id, what: "the playlist “\(pl.name)”") }
+                    }
+                }
+            case .unavailable:
+                if strict { throw await Self.unreadable(id, what: "playlists") }
             }
             if contributed { capturedProviderIDs.append(id) }
         }
@@ -534,6 +567,26 @@ extension BackendAPI {
         } catch {
             throw BackendError.message("Backup failed. Please try again.")
         }
+    }
+
+    /// Adapters with typed reads answer `.unavailable` only for a failed read,
+    /// so a backup must not claim to cover them. Legacy adapters answer
+    /// `.unavailable` for an empty collection too, so for them it means empty.
+    static let strictReadProviders: Set<ProviderID> = [.spotify, .apple]
+
+    private static func unreadable(_ id: ProviderID, what: String) async -> BackendError {
+        let label = ProviderCatalog.entry(id)?.label ?? id.rawValue
+        if id == .spotify, let resume = await SpotifyReadBackoff.shared.resumeDate() {
+            let time = resume.formatted(date: .omitted, time: .shortened)
+            return .message("Spotify is limiting requests until \(time), so \(what) couldn’t be read. The backup was not saved; it will retry.")
+        }
+        return .message("\(label) couldn’t be read (\(what)). The backup was not saved so it never records songs as missing; try again in a moment.")
+    }
+
+    /// Provider tag for a snapshot row, from the `{providerID}:` prefix of its URI.
+    static func providerRawValue(forURI uri: String) -> String {
+        let prefix = String(uri.prefix { $0 != ":" })
+        return ProviderID(rawValue: prefix)?.rawValue ?? ProviderID.spotify.rawValue
     }
 
     /// The distinct set of services actually present in a snapshot, derived from
@@ -661,6 +714,37 @@ extension BackendAPI {
             throw BackendError.notSignedIn
         }
 
+        // The child inserts are not one transaction. A snapshot row without its
+        // songs would later count as a completed baseline and read as an empty
+        // library, so any failure below removes the parent again.
+        do {
+            try await insertChildren(of: snapshotID, playlists: playlists, liked: liked,
+                                     expectedUserID: expectedUserID, client: client)
+        } catch {
+            _ = await BackendAPI.shared.deleteSnapshot(id: snapshotID)
+            throw error
+        }
+
+        return ImportSnapshotResult(
+            snapshotID: snapshotID,
+            playlistCount: playlistCount,
+            trackCount: trackCount,
+            likedCount: likedCount
+        )
+    }
+
+    /// PostgREST accepts large bodies, but one multi-megabyte insert of ten
+    /// thousand liked songs is the request most likely to time out; keep every
+    /// child insert to a bounded batch.
+    private static let insertBatchSize = 500
+
+    private func insertChildren(
+        of snapshotID: UUID,
+        playlists: [CapturedPlaylist],
+        liked: [ImportedRow],
+        expectedUserID: UUID?,
+        client: SupabaseClient
+    ) async throws {
         // 2) Each playlist + its tracks (position by row order).
         for pl in playlists {
             guard expectedUserID == nil
@@ -672,7 +756,8 @@ extension BackendAPI {
                 spotifyPlaylistId: pl.sourceID,
                 name: pl.name,
                 trackCount: pl.rows.count,
-                imageUrl: pl.imageURL
+                imageUrl: pl.imageURL,
+                providerId: pl.rows.first.map { Self.providerRawValue(forURI: $0.uri) } ?? ProviderID.spotify.rawValue
             )
             let plInserted: [IdRowDTO] = try await client
                 .from("snapshot_playlists")
@@ -691,36 +776,42 @@ extension BackendAPI {
                     albumName: r.album,
                     position: idx,
                     albumArtUrl: r.albumArtURL,
-                    durationMs: r.durationMS
+                    durationMs: r.durationMS,
+                    providerId: Self.providerRawValue(forURI: r.uri)
                 )
             }
-            if !trackPayload.isEmpty {
-                try await client.from("snapshot_tracks").insert(trackPayload).execute()
+            for batch in Self.batches(trackPayload) {
+                try await client.from("snapshot_tracks").insert(batch).execute()
             }
         }
 
         // 3) Liked songs (empty-playlist rows).
-        if !liked.isEmpty {
-            let likedPayload = liked.enumerated().map { idx, r in
-                SnapshotLikedTrackInsertDTO(
-                    snapshotId: snapshotID,
-                    spotifyTrackUri: r.uri,
-                    trackName: r.name,
-                    artistName: r.artist,
-                    albumName: r.album,
-                    position: idx,
-                    albumArtUrl: r.albumArtURL,
-                    durationMs: r.durationMS
-                )
-            }
-            try await client.from("snapshot_liked_tracks").insert(likedPayload).execute()
+        let likedPayload = liked.enumerated().map { idx, r in
+            SnapshotLikedTrackInsertDTO(
+                snapshotId: snapshotID,
+                spotifyTrackUri: r.uri,
+                trackName: r.name,
+                artistName: r.artist,
+                albumName: r.album,
+                position: idx,
+                albumArtUrl: r.albumArtURL,
+                durationMs: r.durationMS,
+                providerId: Self.providerRawValue(forURI: r.uri)
+            )
         }
+        for batch in Self.batches(likedPayload) {
+            guard expectedUserID == nil
+                    || AccountSessionStore.currentOwnerID == expectedUserID else {
+                throw BackendError.notSignedIn
+            }
+            try await client.from("snapshot_liked_tracks").insert(batch).execute()
+        }
+    }
 
-        return ImportSnapshotResult(
-            snapshotID: snapshotID,
-            playlistCount: playlistCount,
-            trackCount: trackCount,
-            likedCount: likedCount
-        )
+    static func batches<T>(_ rows: [T], size: Int = insertBatchSize) -> [[T]] {
+        guard !rows.isEmpty else { return [] }
+        return stride(from: 0, to: rows.count, by: max(1, size)).map { start in
+            Array(rows[start..<min(start + max(1, size), rows.count)])
+        }
     }
 }
