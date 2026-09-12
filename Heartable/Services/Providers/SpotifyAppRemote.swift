@@ -62,6 +62,36 @@ final class SpotifyAppRemote: NSObject, @preconcurrency SPTAppRemoteDelegate {
         }
     }
 
+    /// Installs Heartable's order through the SDK on the phone player that
+    /// `wakeAndPlay` just started: shuffle off, repeat off, an optional seek,
+    /// then the following songs enqueued in order. This is the road when the
+    /// Web API answers "restriction violated" for this device; it needs the
+    /// App Remote connection the wake opened, which lives until the app leaves
+    /// the foreground.
+    func installQueue(following uris: [String], positionMs: Int = 0) async throws {
+        guard let remote, remote.isConnected, let player = remote.playerAPI,
+              ownerID == AccountSessionStore.currentOwnerID else {
+            throw ProviderError("Spotify on this iPhone isn’t connected to Heartable right now.")
+        }
+        try await call { player.setShuffle(false, callback: $0) }
+        try await call { player.setRepeatMode(.off, callback: $0) }
+        if positionMs > 0 {
+            try await call { player.seek(toPosition: positionMs, callback: $0) }
+        }
+        for uri in uris {
+            try Task.checkCancellation()
+            try await call { player.enqueueTrackUri(uri, callback: $0) }
+        }
+    }
+
+    private func call(_ command: (@escaping SPTAppRemoteCallback) -> Void) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            command { _, error in
+                if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+            }
+        }
+    }
+
     func handle(_ url: URL) {
         guard awaitingCallback, pending != nil,
               url.scheme == "heartable", url.host == "callback",

@@ -356,7 +356,12 @@ enum SpotifyAPI {
 
             let message = parsePlayError(status: resp.statusCode, data: data)
             if resp.statusCode == 403, message.localizedCaseInsensitiveContains("restriction") {
-                throw SpotifyPlaybackRestrictedError(message: message)
+                var detail = message
+                if case .state(let state) = await pollPlayback(token: token),
+                   let disallowed = state.actions?.disallowedActions, !disallowed.isEmpty {
+                    detail += " Spotify reports as not allowed right now: \(disallowed.joined(separator: ", "))."
+                }
+                throw SpotifyPlaybackRestrictedError(message: detail)
             }
             throw ProviderError(message)
         }
@@ -628,6 +633,16 @@ struct SpotifyDevice: Decodable, Sendable {
     }
 }
 
+/// The `actions.disallows` map Spotify attaches to a player state: the
+/// commands the current device or context will refuse.
+struct PlaybackActions: Decodable, Sendable {
+    let disallows: [String: Bool]?
+
+    var disallowedActions: [String] {
+        (disallows ?? [:]).filter { $0.value }.keys.sorted()
+    }
+}
+
 struct PlaybackState: Decodable, Sendable {
     let isPlaying: Bool?
     let progressMs: Int?
@@ -635,9 +650,10 @@ struct PlaybackState: Decodable, Sendable {
     let item: SpotifyTrack?
     let shuffleState: Bool?
     let repeatState: String?
+    let actions: PlaybackActions?
 
     private enum CodingKeys: String, CodingKey {
-        case device, item
+        case device, item, actions
         case isPlaying = "is_playing"
         case progressMs = "progress_ms"
         case shuffleState = "shuffle_state"

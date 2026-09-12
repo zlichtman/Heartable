@@ -82,4 +82,14 @@ final class SpotifyHistoryAndQueueTests: XCTestCase {
         XCTAssertEqual(SpotifyQueueOrder.describeUnconfirmed(state: nil, deviceID: nil, refusal: nil),
                        "Spotify didn’t report the device state.")
     }
+
+    /// A "restriction violated" refusal is explained with the actions Spotify
+    /// itself marks as disallowed on the current device.
+    func testPlaybackStateDecodesDisallowedActions() throws {
+        let json = #"{"is_playing":true,"actions":{"disallows":{"resuming":true,"toggling_shuffle":true,"pausing":false}}}"#
+        let state = try JSONDecoder().decode(PlaybackState.self, from: Data(json.utf8))
+        XCTAssertEqual(state.actions?.disallowedActions, ["resuming", "toggling_shuffle"])
+        let bare = try JSONDecoder().decode(PlaybackState.self, from: Data(#"{"is_playing":false}"#.utf8))
+        XCTAssertNil(bare.actions)
+    }
 }

@@ -436,11 +436,24 @@ final class PlayerStore {
                     // road: the SDK plays inside the Spotify app itself.
                     try await SpotifyAppRemote.shared.wakeAndPlay(track)
                     try Task.checkCancellation()
-                    // App Remote can play before Connect publishes the phone.
-                    // Wait through that short propagation gap without reopening
-                    // Spotify or showing an empty device picker.
-                    try await PlaybackStartupRetry.waitForSpotifyDevice {
-                        try await self.installSpotifyQueue(segment, token: token, positionMs: positionMs)
+                    do {
+                        // App Remote can play before Connect publishes the phone.
+                        // Wait through that short propagation gap without reopening
+                        // Spotify or showing an empty device picker.
+                        try await PlaybackStartupRetry.waitForSpotifyDevice {
+                            try await self.installSpotifyQueue(segment, token: token, positionMs: positionMs)
+                        }
+                    } catch let refusal as SpotifyPlaybackRestrictedError {
+                        // The phone is playing the selected song; only the Web
+                        // API refuses to drive this device. Install the rest of
+                        // Heartable's order through the SDK connection instead.
+                        let start = segment.firstIndex { $0.key == track.key }.map { $0 + 1 } ?? 1
+                        let following = Array(segment.dropFirst(start).prefix(50)).map(\.uri)
+                        do {
+                            try await SpotifyAppRemote.shared.installQueue(following: following, positionMs: positionMs)
+                        } catch {
+                            throw refusal
+                        }
                     }
                 }
                 if !playing { try await SpotifyAPI.control("/me/player/pause", token: token) }

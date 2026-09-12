@@ -144,6 +144,11 @@ Playback starts through the provider that owns the selected track:
   return to Heartable when no device is active. A brief app switch is required;
   never promise invisible cold starts. The SDK token stays in memory, must match
   the account-bound Spotify user, and never replaces Web API credentials.
+  When the Web API answers 403 "restriction violated" for the phone after the
+  SDK started the song, install Heartable's order through the SDK connection
+  (shuffle off, repeat off, seek, enqueue) instead of reporting a failed start;
+  every player refusal must surface Spotify's own reason and the actions it
+  marks as disallowed, never a generic "Premium required".
 - Providers with legal direct streams use `LocalAudioEngine`.
 - A stats-only provider never presents playback controls.
 
