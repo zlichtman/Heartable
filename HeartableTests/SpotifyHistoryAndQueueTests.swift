@@ -63,4 +63,23 @@ final class SpotifyHistoryAndQueueTests: XCTestCase {
         XCTAssertTrue(merged[0].imported)
         XCTAssertFalse(merged[1].imported)
     }
+
+    /// The queue-mode warning must say what Spotify actually reported, so a
+    /// refusal, Smart Shuffle, or a device mismatch is not one vague sentence.
+    func testUnconfirmedQueueModeNamesTheActualCause() throws {
+        func state(_ json: String) throws -> PlaybackState {
+            try JSONDecoder().decode(PlaybackState.self, from: Data(json.utf8))
+        }
+        XCTAssertEqual(
+            SpotifyQueueOrder.describeUnconfirmed(state: nil, deviceID: nil, refusal: "Spotify refused playback: Restriction violated"),
+            "Spotify refused to change the playback mode: Spotify refused playback: Restriction violated")
+        let shuffled = try state(#"{"shuffle_state":true,"repeat_state":"off","device":{"id":"d1","is_active":true,"name":"iPhone"}}"#)
+        XCTAssertTrue(SpotifyQueueOrder.describeUnconfirmed(state: shuffled, deviceID: "d1", refusal: nil).contains("Smart Shuffle"))
+        let elsewhere = try state(#"{"shuffle_state":false,"repeat_state":"context","device":{"id":"d2","is_active":true,"name":"Kitchen"}}"#)
+        let text = SpotifyQueueOrder.describeUnconfirmed(state: elsewhere, deviceID: "d1", refusal: nil)
+        XCTAssertTrue(text.contains("Repeat is still context"))
+        XCTAssertTrue(text.contains("Kitchen"))
+        XCTAssertEqual(SpotifyQueueOrder.describeUnconfirmed(state: nil, deviceID: nil, refusal: nil),
+                       "Spotify didn’t report the device state.")
+    }
 }

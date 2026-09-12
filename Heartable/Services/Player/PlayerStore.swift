@@ -480,10 +480,10 @@ final class PlayerStore {
                                                        deviceId: deviceID, positionMs: positionMs)
         // Heartable has already ordered the queue, including weighted shuffle.
         // Inherited Spotify shuffle/repeat must not reorder or loop that queue.
-        let confirmed = try await SpotifyQueueOrder.configure(token: token, deviceID: resolvedDevice ?? deviceID)
+        let verification = try await SpotifyQueueOrder.verify(token: token, deviceID: resolvedDevice ?? deviceID)
         try Task.checkCancellation()
-        if !confirmed {
-            showFeedback("Spotify started playing, but hasn’t confirmed Shuffle and Repeat are off. Reapply the playback mode to retry.")
+        if case .unconfirmed(let reason) = verification {
+            showFeedback("Spotify started playing, but Heartable’s order isn’t in charge yet. \(reason) Reapply the playback mode to retry.")
         }
     }
 
