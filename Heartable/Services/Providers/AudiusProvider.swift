@@ -132,7 +132,7 @@ struct AudiusProvider: MusicProvider {
             artists: artists,
             album: nil,
             albumArt: t.artwork?.best.flatMap(URL.init(string:)),
-            durationMs: Int((t.duration ?? 0) * 1000)
+            durationMs: Int(exactly: ((t.duration ?? 0) * 1000).rounded()) ?? 0
         )
     }
 }

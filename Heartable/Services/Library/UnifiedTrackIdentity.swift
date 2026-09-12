@@ -67,6 +67,9 @@ struct UnifiedTrackIdentity: Hashable, Sendable, Codable {
                 cut = min(cut, lowered.distance(from: lowered.startIndex, to: r.lowerBound))
             }
         }
+        // Lowercasing can change grapheme counts; an offset measured in the
+        // lowered copy must never be applied past the original's end.
+        guard cut < raw.count else { return raw }
         let idx = raw.index(raw.startIndex, offsetBy: cut)
         return String(raw[..<idx])
     }

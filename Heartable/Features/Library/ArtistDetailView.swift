@@ -25,10 +25,18 @@ struct ArtistDetailView: View {
         let tracks: [UnifiedTrack]
     }
 
+    /// Grouped sections, rebuilt only when the library index changes. Deriving
+    /// them in `body` scanned every library entry two or three times per render.
+    @State private var groups: [Group] = []
+
+    private var groupsRevision: String {
+        "\(artist.name)|\(store.libraryTracks.count)|\(store.indexingArtists)|\(supplementalTracks?.count ?? -1)"
+    }
+
     /// Builds the grouped sections from the artist's library entries. A track that
     /// appears in multiple playlists shows once per playlist (that's the point of
     /// the attribution); within a group it's deduped by key.
-    private var groups: [Group] {
+    private func computeGroups() -> [Group] {
         let entries = store.entries(forArtist: artist.name)
 
         var loose = supplementalTracks ?? []
@@ -97,6 +105,7 @@ struct ArtistDetailView: View {
         .background(theme.palette.bg.ignoresSafeArea())
         .navigationTitle(artist.name)
         .navigationBarTitleDisplayMode(.inline)
+        .task(id: groupsRevision) { groups = computeGroups() }
     }
 
     private var header: some View {

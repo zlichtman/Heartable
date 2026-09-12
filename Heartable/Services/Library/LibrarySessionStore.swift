@@ -59,16 +59,14 @@ final class LibrarySessionStore {
         let library = library
         let master = master
         let task = Task {
-            async let libraryHydration: Void = library.hydrate()
-            async let playlistHydration: Void = playlistTracks.hydrate()
-            async let masterHydration: Void = master.hydrate()
-
-            await libraryHydration
-            await playlistHydration
+            // One JSON decode at a time: on a large library these caches are
+            // megabytes each, and their decoder peaks must not stack.
+            await library.hydrate()
+            await playlistTracks.hydrate()
             onDecoded?()
             guard !Task.isCancelled else { return }
             await library.restoreArtistIndex(from: playlistTracks)
-            await masterHydration
+            await master.hydrate()
         }
         preparationTask = task
         preparationID = runID

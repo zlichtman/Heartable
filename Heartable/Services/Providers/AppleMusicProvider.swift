@@ -318,7 +318,7 @@ struct AppleMusicProvider: MusicProvider {
     /// Maps a MusicKit `Song` into the unified model.
     static func mapSong(_ song: Song) -> UnifiedTrack {
         let rawID = song.id.rawValue
-        let durationMs = Int((song.duration ?? 0) * 1000)
+        let durationMs = Int(exactly: ((song.duration ?? 0) * 1000).rounded()) ?? 0
         return UnifiedTrack(
             key: trackKey(.apple, rawID),
             providerID: .apple,
@@ -353,7 +353,7 @@ struct AppleMusicProvider: MusicProvider {
                 artists: [UnifiedArtist(id: track.artistName, name: track.artistName)],
                 album: track.albumTitle,
                 albumArt: track.artwork?.url(width: 600, height: 600),
-                durationMs: Int((track.duration ?? 0) * 1000)
+                durationMs: Int(exactly: ((track.duration ?? 0) * 1000).rounded()) ?? 0
             )
         }
     }

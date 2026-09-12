@@ -296,17 +296,26 @@ final class MasterLibraryStore {
             return
         }
 
-        // First paint is entirely local and synchronous. Keep network debounce
-        // from turning a responsive indexed search into a blank spinner.
-        searchResults = Self.localResults(
-            query: query,
-            tracks: tracks,
-            playlists: localPlaylists
-        )
+        // First paint is local. A small index ranks synchronously so typing never
+        // shows a blank spinner; a large one ranks off the main actor, because
+        // filtering and sorting tens of thousands of tracks per keystroke on the
+        // main thread is a multi-second freeze.
+        let localTracks = tracks
+        let inline = localTracks.count <= Self.inlineSearchLimit
+        if inline {
+            searchResults = Self.localResults(query: query, tracks: localTracks, playlists: localPlaylists)
+        }
         searching = true
         let scope = searchScope
         searchTask = Task { [weak self] in
             guard let self else { return }
+            if !inline {
+                let local = await Task.detached(priority: .userInitiated) {
+                    Self.localResults(query: query, tracks: localTracks, playlists: localPlaylists)
+                }.value
+                if Task.isCancelled { return }
+                self.searchResults = local
+            }
             try? await Task.sleep(for: self.debounce)
             if Task.isCancelled { return }
             await self.runSearch(
@@ -468,12 +477,16 @@ final class MasterLibraryStore {
 
     // MARK: - Ranking
 
+    /// Libraries up to this many songs rank inline on the main actor.
+    nonisolated static let inlineSearchLimit = 2_000
+
     private nonisolated static func localResults(
         query: String,
         tracks: [MasterTrack],
         playlists: [UnifiedPlaylist]
     ) -> SearchResults {
-        let matches = tracks.filter { trackMatches($0, query: query) }
+        let q = normalizedSearchText(query)
+        let matches = tracks.filter { trackMatches($0, normalizedQuery: q) }
         let rankedTracks = rankTracks(matches, query: query)
         return SearchResults(
             tracks: rankedTracks,
@@ -501,12 +514,14 @@ final class MasterLibraryStore {
             if title.contains(q) { return 4 }
             return 5
         }
-        return tracks.sorted { a, b in
-            let sa = score(a), sb = score(b)
-            if sa != sb { return sa < sb }
-            if a.providers.count != b.providers.count { return a.providers.count > b.providers.count }
-            return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
-        }
+        // Score each track once; the comparator form normalized both titles
+        // and both artists again on every comparison.
+        let scored = tracks.map { (track: $0, score: score($0)) }
+        return scored.sorted { a, b in
+            if a.score != b.score { return a.score < b.score }
+            if a.track.providers.count != b.track.providers.count { return a.track.providers.count > b.track.providers.count }
+            return a.track.title.localizedCaseInsensitiveCompare(b.track.title) == .orderedAscending
+        }.map(\.track)
     }
 
     nonisolated static func rankArtists(
@@ -574,8 +589,14 @@ final class MasterLibraryStore {
         _ track: MasterTrack,
         query: String
     ) -> Bool {
-        let q = normalizedSearchText(query)
-        return normalizedSearchText(track.title).contains(q)
+        trackMatches(track, normalizedQuery: normalizedSearchText(query))
+    }
+
+    private nonisolated static func trackMatches(
+        _ track: MasterTrack,
+        normalizedQuery q: String
+    ) -> Bool {
+        normalizedSearchText(track.title).contains(q)
             || normalizedSearchText(track.artistNames).contains(q)
     }
 

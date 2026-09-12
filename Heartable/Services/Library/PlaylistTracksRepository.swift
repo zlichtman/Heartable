@@ -35,7 +35,7 @@ final class PlaylistTracksRepository {
 
     private actor CacheIO {
         func load(from url: URL?) -> Snapshot? {
-            guard let url, let data = try? Data(contentsOf: url),
+            guard let url, let data = try? Data(contentsOf: url, options: .mappedIfSafe),
                   let snapshot = try? JSONDecoder().decode(Snapshot.self, from: data),
                   snapshot.version == Snapshot.currentVersion else { return nil }
             return snapshot
@@ -275,7 +275,20 @@ final class PlaylistTracksRepository {
         let loaded = await task.value
         guard lifecycleID == requestLifecycleID else { return }
         apply(loaded, to: playlist)
-        await persist()
+        schedulePersist()
+    }
+
+    /// Opening several playlists in a row must not re-encode the whole cache
+    /// after each one; writes coalesce into one save shortly after the last.
+    private var persistTask: Task<Void, Never>?
+
+    private func schedulePersist() {
+        persistTask?.cancel()
+        persistTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled, let self else { return }
+            await self.persist()
+        }
     }
 
     func remove(keys: Set<String>) async {

@@ -17,12 +17,8 @@ struct MasterArtist: Identifiable, Hashable, Sendable, Codable {
     static func aggregate(_ tracks: [MasterTrack]) -> [MasterArtist] {
         var map: [String: MasterArtist] = [:]
         let stableTracks = tracks.sorted { lhs, rhs in
-            let leftRank = lhs.sources.map {
-                ArtworkSourcePreference.rank($0.providerID)
-            }.min() ?? Int.max
-            let rightRank = rhs.sources.map {
-                ArtworkSourcePreference.rank($0.providerID)
-            }.min() ?? Int.max
+            let leftRank = lhs.sources.reduce(Int.max) { min($0, ArtworkSourcePreference.rank($1.providerID)) }
+            let rightRank = rhs.sources.reduce(Int.max) { min($0, ArtworkSourcePreference.rank($1.providerID)) }
             if leftRank != rightRank { return leftRank < rightRank }
             return lhs.identity.key < rhs.identity.key
         }

@@ -53,6 +53,12 @@ struct MasterTrack: Identifiable, Hashable, Sendable, Codable {
 
     // MARK: - Display (richest source wins)
 
+    /// A decoded snapshot row with no sources must render, not trap.
+    private static let emptySource = UnifiedTrack(
+        key: "", providerID: .spotify, providerTrackID: "", uri: "", name: "Unknown",
+        artists: [], album: nil, albumArt: nil, durationMs: 0
+    )
+
     /// The most metadata-complete source, used for the row's title/art.
     var display: UnifiedTrack {
         sources.sorted { lhs, rhs in
@@ -68,7 +74,7 @@ struct MasterTrack: Identifiable, Hashable, Sendable, Codable {
                 )
             }
             return lhs.key < rhs.key
-        }.first ?? sources[0]
+        }.first ?? Self.emptySource
     }
     var title: String { display.name }
     var artistNames: String { display.artistNames }

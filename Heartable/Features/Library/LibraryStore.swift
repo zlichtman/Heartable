@@ -71,7 +71,7 @@ final class LibraryStore {
     /// the UI's MainActor.
     private actor CacheIO {
         func load(from url: URL?) -> CacheSnapshot? {
-            guard let url, let data = try? Data(contentsOf: url) else { return nil }
+            guard let url, let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
             return try? JSONDecoder().decode(CacheSnapshot.self, from: data)
         }
 
@@ -524,23 +524,19 @@ final class LibraryStore {
     ) -> [ArtistAgg] {
         var map: [String: ArtistAgg] = [:]
         var songsByArtist: [String: Set<String>] = [:]
-        let stableTracks = tracks.sorted { lhs, rhs in
-            if lhs.providerID != rhs.providerID {
-                return ArtworkSourcePreference.precedes(
-                    lhs.providerID,
-                    rhs.providerID
-                )
-            }
-            let leftIdentity = UnifiedTrackIdentity.make(
-                title: lhs.name,
-                artist: lhs.artists.first?.name ?? ""
-            ).key
-            let rightIdentity = UnifiedTrackIdentity.make(
-                title: rhs.name,
-                artist: rhs.artists.first?.name ?? ""
-            ).key
-            return leftIdentity < rightIdentity
+        // Identity is computed once per track, never inside the comparator: on
+        // a large library the comparator form ran it over a million times per
+        // launch, seconds of CPU and tens of millions of allocations.
+        let keyed = tracks.map { track in
+            (key: UnifiedTrackIdentity.make(title: track.name, artist: track.artists.first?.name ?? "").key,
+             track: track)
         }
+        let stableTracks = keyed.sorted { lhs, rhs in
+            if lhs.track.providerID != rhs.track.providerID {
+                return ArtworkSourcePreference.precedes(lhs.track.providerID, rhs.track.providerID)
+            }
+            return lhs.key < rhs.key
+        }.map(\.track)
         for t in stableTracks {
             for a in t.artists where !a.name.isEmpty {
                 let key = a.name.lowercased()

@@ -99,7 +99,7 @@ struct DeezerProvider: MusicProvider {
             artists: artists,
             album: t.album?.title,
             albumArt: Self.cover(t.album),
-            durationMs: Int((t.duration ?? 0).rounded()) * 1000
+            durationMs: (Int(exactly: (t.duration ?? 0).rounded()) ?? 0) * 1000
         )
     }
 

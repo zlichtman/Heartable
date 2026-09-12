@@ -1457,7 +1457,7 @@ private struct BackupChangesView: View {
                 }
                 .foregroundStyle(tint)
 
-                VStack(spacing: 0) {
+                LazyVStack(spacing: 0) {
                     ForEach(Array(items.enumerated()), id: \.offset) { index, item in
                         changeRow(item, action: title == "Added" ? "Added to" : "Removed from")
                         if index < items.count - 1 {
@@ -1666,7 +1666,7 @@ private struct BackupContentsView: View {
                     } else if tracks.isEmpty {
                         emptyState
                     } else {
-                        VStack(spacing: 0) {
+                        LazyVStack(spacing: 0) {
                             ForEach(Array(tracks.enumerated()), id: \.element.id) { index, track in
                                 trackRow(track, number: index + 1)
                                 if index < tracks.count - 1 {

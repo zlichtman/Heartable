@@ -377,27 +377,28 @@ final class ArtworkImageCache {
 /// Async artwork that never drops a successfully decoded image back to a loading
 /// placeholder when its surrounding SwiftUI view is refreshed.
 struct CachedArtworkImage<Placeholder: View>: View {
-    private struct Loaded {
-        let url: URL
-        let image: UIImage
-    }
-
     let url: URL?
     @ViewBuilder let placeholder: () -> Placeholder
 
-    @State private var loaded: Loaded?
+    /// Only the URL whose cover last landed is retained. The bitmap lives in
+    /// the bounded shared cache, so a screen of realized rows cannot pin a
+    /// screen of full-size covers outside that cap (the memory-limit exit on
+    /// large libraries).
+    @State private var loadedURL: URL?
     @State private var loadingURL: URL?
 
     private var image: UIImage? {
         guard let url else { return nil }
-        if loaded?.url == url { return loaded?.image }
         if let cached = ArtworkImageCache.shared.image(for: url) {
             return cached
         }
-        // Keep the prior decoded image in place while a replacement URL loads.
-        // The task clears it if the new URL genuinely fails, avoiding both a
+        // Keep the prior cover in place while a replacement URL loads. The
+        // task clears it if the new URL genuinely fails, avoiding both a
         // placeholder flash and a permanently incorrect cover.
-        return loaded?.image
+        if let loadedURL, loadedURL != url {
+            return ArtworkImageCache.shared.image(for: loadedURL)
+        }
+        return nil
     }
 
     var body: some View {
@@ -412,7 +413,7 @@ struct CachedArtworkImage<Placeholder: View>: View {
         }
         .task(id: url) {
             guard let url else {
-                loaded = nil
+                loadedURL = nil
                 loadingURL = nil
                 return
             }
@@ -420,13 +421,13 @@ struct CachedArtworkImage<Placeholder: View>: View {
             defer {
                 if loadingURL == url { loadingURL = nil }
             }
-            if let image = ArtworkImageCache.shared.image(for: url) {
-                loaded = Loaded(url: url, image: image)
-            } else if let image = await ArtworkImageCache.shared.load(url),
+            if ArtworkImageCache.shared.image(for: url) != nil {
+                loadedURL = url
+            } else if await ArtworkImageCache.shared.load(url) != nil,
                       !Task.isCancelled {
-                loaded = Loaded(url: url, image: image)
-            } else if !Task.isCancelled, loaded?.url != url {
-                loaded = nil
+                loadedURL = url
+            } else if !Task.isCancelled, loadedURL != url {
+                loadedURL = nil
             }
         }
     }

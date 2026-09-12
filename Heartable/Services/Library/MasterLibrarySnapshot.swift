@@ -46,7 +46,7 @@ struct MasterLibrarySnapshot: Codable, Sendable {
     ) -> MasterLibrarySnapshot? {
         guard let ownerID,
               let url = fileURL(ownerID: ownerID),
-              let data = try? Data(contentsOf: url) else { return nil }
+              let data = try? Data(contentsOf: url, options: .mappedIfSafe) else { return nil }
         guard let snapshot = try? JSONDecoder().decode(Self.self, from: data),
               snapshot.version == currentVersion else { return nil }
         return snapshot
