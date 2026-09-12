@@ -22,6 +22,9 @@ struct EditProfileView: View {
     @Environment(AuthStore.self) private var auth
     @Environment(MeStore.self) private var me
     @Environment(BannerCenter.self) private var banners
+    @Environment(LibrarySessionStore.self) private var librarySession
+    @Environment(ProvidersStore.self) private var providers
+    @Environment(PlaylistTracksRepository.self) private var playlistTracks
     @Environment(\.dismiss) private var dismiss
 
     @State private var displayName = ""
@@ -50,7 +53,6 @@ struct EditProfileView: View {
     @State private var showingFileImporter = false
     @State private var showingDiscardConfirmation = false
     @State private var loadingPlaylists = false
-    @State private var profileLibrary = LibraryStore()
     @FocusState private var focusedField: Field?
 
     var body: some View {
@@ -832,11 +834,16 @@ struct EditProfileView: View {
 
         do {
             async let savedTask = me.loadFeaturedPlaylists(userID: userID, force: force)
-            await profileLibrary.loadAll()
+            // The app shell owns library state; never spin up a second
+            // LibraryStore that re-probes providers and rewrites the cache.
+            await librarySession.synchronize(
+                providers: providers.libraryProviders,
+                playlistTracks: playlistTracks
+            )
             let savedPlaylists = try await savedTask
             guard auth.userID == userID else { return }
 
-            let providerPlaylists = profileLibrary.playlists.filter { !$0.isMixtape }
+            let providerPlaylists = librarySession.library.playlists.filter { !$0.isMixtape }
             var seen = Set<String>()
             playlistChoices = (savedPlaylists + providerPlaylists).filter {
                 seen.insert($0.key).inserted

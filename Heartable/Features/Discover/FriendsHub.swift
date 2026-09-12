@@ -482,7 +482,9 @@ private struct FindTab: View {
     }
 
     private func load() async {
-        await me.load(userID: auth.userID)   // ensure the invite code is available
+        // A freshly onboarded profile is synthesized locally without a share
+        // code; force the authoritative row so the invite QR is never blank.
+        await me.load(userID: auth.userID, force: me.profile?.shareCode == nil)
         async let i = BackendAPI.shared.listIncomingRequests()
         async let s = BackendAPI.shared.listSentRequests()
         incoming = await i

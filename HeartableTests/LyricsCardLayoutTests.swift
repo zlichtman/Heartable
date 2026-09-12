@@ -35,6 +35,45 @@ final class LyricsCardLayoutTests: XCTestCase {
         try await render(model: LyricsModel(synced: lines), themeKey: "gruvbox-dark", plain: false)
     }
 
+    /// TestFlight builds 53-58 trapped with "Index out of range" in the lyrics
+    /// capsule when a track change emptied `synced` while a preview index from
+    /// the previous song was still rendered. The card must survive that shrink.
+    func testTrackChangeShrinkingSyncedLinesDoesNotTrapTheRenderedCard() async throws {
+        let lines = (0..<8).map { SyncedLine(timeMs: $0 * 1_000, text: "Line \($0)") }
+        let model = LyricsModel(synced: lines)
+        XCTAssertEqual(model.previewLines(positionMs: 7_500), ["Line 7"])
+
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        let theme = ThemeStore()
+        let host = UIHostingController(rootView:
+            LyricsCard(model: model, positionMs: 7_500, onExpand: {})
+                .padding(20)
+                .environment(theme)
+        )
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            previous?.makeKey()
+        }
+        try await Task.sleep(for: .milliseconds(200))
+
+        // An empty title resolves without a network round trip, so this is the
+        // real `load(for:)` path: `synced` is cleared before the new result lands.
+        model.load(for: PlayerStore.Now(
+            source: .spotify, name: "", artist: "", artworkURL: nil, isPlaying: true,
+            positionMs: 0, durationMs: 0, uri: "spotify:track:next", providerTrackID: "next"))
+        host.view.setNeedsLayout()
+        host.view.layoutIfNeeded()
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertTrue(model.synced.isEmpty)
+        XCTAssertEqual(model.previewLines(positionMs: 7_500), [])
+        XCTAssertEqual(LyricsModel.currentIndex(in: [], positionMs: 7_500), nil)
+        XCTAssertEqual(Array(LyricsModel.previewIndices(active: 7, count: 0)), [])
+    }
+
     private func render(model: LyricsModel, themeKey: String, plain: Bool) async throws {
         let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
         let previous = scene.keyWindow

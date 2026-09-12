@@ -18,10 +18,6 @@
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
 	<string>$(MARKETING_VERSION)</string>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>spotify</string>
-	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -41,12 +37,14 @@
 	<string>$(LASTFM_API_KEY)</string>
 	<key>LASTFM_USER</key>
 	<string>$(LASTFM_USER)</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>spotify</string>
+	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- Self-hosted servers (Jellyfin default port 8096, Plex direct) are
-		     plain http on the home LAN; this relaxes ATS for local hosts only. -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>

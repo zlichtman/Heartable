@@ -91,7 +91,7 @@ struct LibraryView: View {
 
     private func loadLibrary(force: Bool) async {
         await librarySession.synchronize(
-            providers: providers.connected,
+            providers: providers.libraryProviders,
             playlistTracks: playlistTracks,
             force: force
         )

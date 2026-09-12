@@ -231,7 +231,9 @@ final class PlayerStore {
             if let metadata {
                 var apple = Self.optimisticNow(metadata)
                 apple.isPlaying = playing
-                apple.positionMs = Int(max(0, ApplicationMusicPlayer.shared.playbackTime) * 1000)
+                // MusicKit can report a non-finite time between items; Int(NaN) traps.
+                let playbackTime = ApplicationMusicPlayer.shared.playbackTime
+                apple.positionMs = playbackTime.isFinite ? Int(max(0, playbackTime) * 1000) : 0
                 apple.artworkURL = metadata.albumArt ?? entry.artwork?.url(width: 600, height: 600)
                 candidates.append(apple)
             }

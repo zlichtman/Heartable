@@ -278,17 +278,27 @@ enum AccountSessionStore {
         }
     }
 
-    private static func removeLibraryCaches(ownerID: UUID) {
+    /// Removes the derived library caches (browse snapshot, master library,
+    /// playlist tracks, top tracks) for one account, or for every account when
+    /// `ownerID` is nil. Identity, provider pairings, Keychain items and
+    /// appearance are never touched: these files are all re-derivable from the
+    /// providers and exist only to make launch fast.
+    static func removeLibraryCaches(ownerID: UUID?) {
         let fm = FileManager.default
-        let owner = ownerID.uuidString.lowercased()
+        let owner = ownerID?.uuidString.lowercased()
+
+        func matches(_ name: String, prefix: String, ext: String = ".json") -> Bool {
+            guard name.hasPrefix(prefix), name.hasSuffix(ext) else { return false }
+            guard let owner else { return true }
+            return name.contains(owner)
+        }
 
         if let cacheDirectory = fm.urls(for: .cachesDirectory, in: .userDomainMask).first,
            let files = try? fm.contentsOfDirectory(
                at: cacheDirectory,
                includingPropertiesForKeys: nil
            ) {
-            for file in files where
-                file.lastPathComponent == "heartable-library-cache-\(owner).json" {
+            for file in files where matches(file.lastPathComponent, prefix: "heartable-library-cache-") {
                 try? fm.removeItem(at: file)
             }
         }
@@ -300,12 +310,9 @@ enum AccountSessionStore {
                includingPropertiesForKeys: nil
            ) {
             for file in files where
-                file.lastPathComponent == "master-library-\(owner).json"
-                || file.lastPathComponent == "playlist-tracks-\(owner).json"
-                || (
-                    file.lastPathComponent.hasPrefix("top-tracks-")
-                        && file.lastPathComponent.contains(owner)
-                ) {
+                matches(file.lastPathComponent, prefix: "master-library-")
+                || matches(file.lastPathComponent, prefix: "playlist-tracks-")
+                || matches(file.lastPathComponent, prefix: "top-tracks-") {
                 try? fm.removeItem(at: file)
             }
         }

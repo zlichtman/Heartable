@@ -131,11 +131,6 @@ final class LibraryStore {
         artists = cachedArtists
     }
 
-    func loadAll(force: Bool = false) async {
-        let connected = await ProviderRegistry.connected()
-        await loadAll(providers: connected, force: force)
-    }
-
     /// Refresh using the already-probed provider list from `ProvidersStore`.
     /// This avoids probing every adapter a second time merely to start a load.
     func loadAll(providers: [MusicProvider], force: Bool = false) async {
@@ -167,27 +162,38 @@ final class LibraryStore {
         // 50/request until exhausted), not just the first page.
         async let liked = ProviderCacheMerge.gather(providers) { await $0.readLikedTracks(limit: 10000) }
         async let pls = ProviderCacheMerge.gather(providers) { await $0.readPlaylists() }
-        async let tapes = BackendAPI.shared.listMixtapes()
+        async let tapes = BackendAPI.shared.fetchMixtapesIfAvailable()
 
-        let topReads = await top
-        let likedReads = await liked
+        // Publish the playlist catalog the moment it lands. On a fresh account
+        // the full liked-songs pull can take minutes (Spotify pages 50 at a
+        // time and may answer 429), and Home must not sit on a spinner for it.
         let mixtapeList = await tapes
-        let mixtapes = (mixtapeList.mine + mixtapeList.shared).map(Self.mapMixtape)
         let playlistReads = await pls
         guard lifecycleID == requestID,
               AccountSessionStore.currentOwnerID == ownerID else { return }
 
+        // A failed backend read is not an empty mixtape shelf.
+        let mixtapes = mixtapeList.map { ($0.mine + $0.shared).map(Self.mapMixtape) }
+            ?? playlists.filter(\.isMixtape)
         let orderedIDs = providers.map(\.id)
+        playlists = dedupePlaylists(mixtapes + preservingPlaylistArtwork(ProviderCacheMerge.merge(
+            cached: playlists.filter { !$0.isMixtape }, providers: orderedIDs,
+            reads: playlistReads, providerID: { $0.providerID }
+        ), cached: playlists))
+        // The playlist pass has resolved: "loaded, empty" is a state, not a spinner.
+        loading = false
+
+        let topReads = await top
+        let likedReads = await liked
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
+
         topTracks = preservingTrackArtwork(dedupeTracks(ProviderCacheMerge.merge(
             cached: topTracks, providers: orderedIDs, reads: topReads, providerID: { $0.providerID }
         )), cached: topTracks)
         likedTracks = preservingTrackArtwork(dedupeTracks(ProviderCacheMerge.merge(
             cached: likedTracks, providers: orderedIDs, reads: likedReads, providerID: { $0.providerID }
         )), cached: likedTracks)
-        playlists = mixtapes + preservingPlaylistArtwork(ProviderCacheMerge.merge(
-            cached: playlists.filter { !$0.isMixtape }, providers: orderedIDs,
-            reads: playlistReads, providerID: { $0.providerID }
-        ), cached: playlists)
 
         let refreshedTracks = topTracks + likedTracks
         let cachedImages = artistImageCache
@@ -426,6 +432,14 @@ final class LibraryStore {
     private func dedupeTracks(_ tracks: [UnifiedTrack]) -> [UnifiedTrack] {
         var seen = Set<String>()
         return tracks.filter { seen.insert($0.key).inserted }
+    }
+
+    /// A provider can hand back the same playlist twice across pages. Identity
+    /// is the key, and duplicate identities must never reach a ForEach or a
+    /// keyed dictionary.
+    private func dedupePlaylists(_ playlists: [UnifiedPlaylist]) -> [UnifiedPlaylist] {
+        var seen = Set<String>()
+        return playlists.filter { seen.insert($0.key).inserted }
     }
 
     private struct ArtistProjection: Sendable {

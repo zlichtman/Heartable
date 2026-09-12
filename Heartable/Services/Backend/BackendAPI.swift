@@ -40,10 +40,6 @@ struct BackendAPI: Sendable {
         return rows.first
     }
 
-    func upsertMyProfile(_ profile: ProfileDTO) async throws {
-        try await client.from("profiles").upsert(profile).execute()
-    }
-
     // MARK: - Profiles / discoverability
 
     func matchContactEmails(hashes: [String]) async throws -> [FoundProfileDTO] {
@@ -57,7 +53,9 @@ struct BackendAPI: Sendable {
     /// NOTE: the RPC returns at most one row (handle/share_code lookup), so the
     /// RN de-duplication-by-userId logic collapses to a passthrough here.
     func findProfiles(query: String) async throws -> [FoundProfileDTO] {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Handles are stored without the "@" the UI invites people to type.
+        var q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        while q.hasPrefix("@") { q.removeFirst() }
         guard !q.isEmpty else { return [] }
         let rows: [FoundProfileDTO] = try await client
             .rpc("find_profile", params: ["p_query": AnyJSON.string(q)])
@@ -953,13 +951,18 @@ struct BackendAPI: Sendable {
     // MARK: - Mixtapes
 
     func listMixtapes() async -> MixtapeListDTO {
+        await fetchMixtapesIfAvailable() ?? MixtapeListDTO(mine: [], shared: [])
+    }
+
+    /// nil means the backend read failed; callers holding a cached shelf keep it.
+    func fetchMixtapesIfAvailable() async -> MixtapeListDTO? {
         let uid = await myUID()
-        var all: [MixtapeDTO] = (try? await client
+        guard var all: [MixtapeDTO] = try? await client
             .from("mixtapes")
             .select()
             .order("updated_at", ascending: false)
             .execute()
-            .value) ?? []
+            .value else { return nil }
         for i in all.indices {
             all[i].mine = (uid != nil && all[i].owner == uid)
             all[i].coverUrl = await mixtapeMediaDisplayURL(all[i].coverUrl)

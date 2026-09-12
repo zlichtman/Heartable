@@ -149,9 +149,13 @@ final class LyricsModel {
     /// Current + next timed line, or an honest excerpt for untimed lyrics.
     /// Never estimate lyric timing from track progress.
     func previewLines(positionMs: Int) -> [String] {
-        if !synced.isEmpty {
-            return Self.previewIndices(active: currentIndex(positionMs: positionMs), count: synced.count)
-                .map { synced[$0].text }
+        // Snapshot once so the index range and the subscript always describe the
+        // same array. A track change empties `synced` while the card is still
+        // rendered; an index computed against the old count must never trap.
+        let lines = synced
+        if !lines.isEmpty {
+            return Self.previewIndices(active: Self.currentIndex(in: lines, positionMs: positionMs), count: lines.count)
+                .compactMap { lines.indices.contains($0) ? lines[$0].text : nil }
         }
         return (plain ?? "").split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -196,9 +200,13 @@ final class LyricsModel {
     /// Index of the last synced line whose `timeMs` is <= `positionMs`, or nil if
     /// playback is before the first line / there are no synced lines.
     func currentIndex(positionMs: Int) -> Int? {
-        guard !synced.isEmpty else { return nil }
+        Self.currentIndex(in: synced, positionMs: positionMs)
+    }
+
+    nonisolated static func currentIndex(in lines: [SyncedLine], positionMs: Int) -> Int? {
+        guard !lines.isEmpty else { return nil }
         var result: Int?
-        for (i, line) in synced.enumerated() {
+        for (i, line) in lines.enumerated() {
             if line.timeMs <= positionMs { result = i } else { break }
         }
         return result

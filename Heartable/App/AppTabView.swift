@@ -18,6 +18,7 @@ struct AppTabView: View {
     @Environment(BannerCenter.self) private var banners
     @Environment(WeeklyRecapStore.self) private var weeklyRecap
     @Environment(LibrarySessionStore.self) private var librarySession
+    @Environment(LibrarySortStore.self) private var librarySort
     @Environment(PlaylistTracksRepository.self) private var playlistTracks
     @Environment(BackupScheduler.self) private var backupScheduler
     @Environment(\.scenePhase) private var scenePhase
@@ -58,6 +59,11 @@ struct AppTabView: View {
         // RootView owns account/provider activation so no provider is probed before
         // the authenticated account namespace and durable manifest are restored.
         .task {
+            // A new build, or a previous run that died inside this bootstrap,
+            // must not replay stale caches into the same failure.
+            LibraryLaunchGuard.prepareForLaunch()
+            LibraryLaunchGuard.beginBootstrap()
+            librarySort.activate(ownerID: AccountSessionStore.currentOwnerID)
             await librarySession.prepareCachedData(
                 using: playlistTracks
             )
@@ -65,9 +71,10 @@ struct AppTabView: View {
         .task(id: providers.refreshGeneration) {
             guard providers.hasRefreshed else { return }
             await librarySession.synchronize(
-                providers: providers.connected,
+                providers: providers.libraryProviders,
                 playlistTracks: playlistTracks
             )
+            LibraryLaunchGuard.finishBootstrap()
             await backupScheduler.runIfDue()
         }
         .task {
@@ -86,6 +93,9 @@ struct AppTabView: View {
                 prefs.refreshGhostMode()
                 player.start()
             } else {
+                // Leaving the foreground is a normal end; a later kill by the
+                // system must not read as a crash inside library bootstrap.
+                LibraryLaunchGuard.finishBootstrap()
                 player.stop()
             }
         }

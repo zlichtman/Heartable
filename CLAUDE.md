@@ -169,7 +169,8 @@ and batches the remaining native entries, guarded by a cancellation generation.
 Never use a MusicKit queue-entry ID as a provider song ID.
 
 `AudioSettings` controls only Heartable's direct streams: gain and crossfade
-duration. Preserve the previous fixed-volume preference when migrating; never
+duration. There is no Sounds settings screen; the values come from stored
+defaults and must not be re-exposed as a panel. Preserve the previous fixed-volume preference when migrating; never
 label a static gain as loudness normalization. Apply volume changes to both
 players during a fade, and settle cancelled fades before pause/resume so a track
 does not remain at partial gain. Provider-owned audio effects stay with Spotify
@@ -189,6 +190,14 @@ means a verified empty collection; `.unavailable` must preserve that provider's
 last snapshot and playlist occurrences. Another service succeeding is never
 permission to prune a failed service. Spotify metadata honors Retry-After across
 reads; cached playback URIs remain usable without waiting for metadata refresh.
+
+Derived library caches never survive a build change or a crash inside the
+library bootstrap. `LibraryLaunchGuard` runs before any cache is decoded: the
+first launch of a new `CFBundleVersion` removes every account's library, master,
+playlist-track and top-track cache, and a bootstrap marker left raised by a
+previous run does the same. Identity, pairings, Keychain items, backups and
+appearance are never cleared by this path. Lower the marker only after the first
+synchronization completes or the app leaves the foreground normally.
 
 `LibrarySessionStore` owns Home library state above the tab hierarchy. Home
 navigation must never own or await playlist traversal or artist aggregation;

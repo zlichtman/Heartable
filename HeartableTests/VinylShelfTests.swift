@@ -98,6 +98,47 @@ final class VinylShelfTests: XCTestCase {
                          resizeTo: CGSize(width: 667, height: 375))
     }
 
+    /// The shelf previously iterated `tracks.indices` and subscripted `tracks`
+    /// inside each child. A playlist refresh that removes songs while sideways
+    /// must update every retained sleeve without an out-of-range subscript.
+    func testShrinkingPlaylistUnderALiveShelfDoesNotTrap() async throws {
+        func fixtures(_ count: Int) -> [UnifiedTrack] {
+            (0..<count).map { index in
+                .init(key: "shrink\(index)", providerID: .spotify, providerTrackID: "\(index)",
+                      uri: "spotify:track:\(index)", name: "Song \(index)",
+                      artists: [.init(id: "a", name: "The Artist")],
+                      album: nil, albumArt: nil, durationMs: 180_000)
+            }
+        }
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previous = scene.keyWindow
+        let window = UIWindow(windowScene: scene)
+        let theme = ThemeStore()
+        let size = CGSize(width: 844, height: 390)
+        func shelf(_ tracks: [UnifiedTrack], selection: Int?) -> some View {
+            PlaylistVinylShelf(tracks: tracks, selection: .constant(selection), viewportSize: size) { _ in }
+                .environment(theme)
+        }
+        let host = UIHostingController(rootView: AnyView(shelf(fixtures(12), selection: 11)))
+        window.frame = CGRect(origin: .zero, size: size)
+        window.rootViewController = host
+        host.view.frame = window.bounds
+        window.makeKeyAndVisible()
+        defer {
+            window.isHidden = true
+            previous?.makeKey()
+        }
+        try await Task.sleep(for: .milliseconds(400))
+
+        for count in [3, 0, 5] {
+            host.rootView = AnyView(shelf(fixtures(count), selection: 11))
+            host.view.setNeedsLayout()
+            host.view.layoutIfNeeded()
+            try await Task.sleep(for: .milliseconds(250))
+            XCTAssertEqual(VinylShelfLayout.validSelection(11, count: count), count == 0 ? nil : count - 1)
+        }
+    }
+
     private func render(themeKey: String, selection: Int, withChrome: Bool = false,
                         size: CGSize = CGSize(width: 844, height: 390), resizeTo: CGSize? = nil,
                         startPlayback: Bool = false, repeatedRotation: Bool = false) async throws {

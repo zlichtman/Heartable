@@ -41,7 +41,9 @@ final class LibrarySessionStore {
         if cachedDataReady { return }
         if let preparationTask {
             await preparationTask.value
-            return
+            // A reset mid-flight cancels that task without publishing anything;
+            // fall through and hydrate for the current account instead.
+            if cachedDataReady || self.preparationTask != nil { return }
         }
 
         let requestID = lifecycleID

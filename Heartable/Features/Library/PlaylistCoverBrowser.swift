@@ -90,7 +90,7 @@ struct PlaylistVinylShelf: View {
             HStack(spacing: layout.panelSpacing) {
                 shelf(layout: layout, centerX: geometry.frame(in: .global).minX + layout.shelfWidth / 2)
                     .frame(width: layout.shelfWidth)
-                if let index = focusedIndex {
+                if let index = focusedIndex, tracks.indices.contains(index) {
                     ScrollView(.vertical) {
                         trackLabel(tracks[index], index: index)
                             .padding(.trailing, 16)
@@ -123,8 +123,10 @@ struct PlaylistVinylShelf: View {
         let anchor = UnitPoint(x: CGFloat(focusedIndex ?? 0) / CGFloat(max(1, tracks.count - 1)), y: 0.5)
         return ScrollView(.horizontal) {
             LazyHStack(alignment: .center, spacing: layout.spacing) {
-                ForEach(tracks.indices, id: \.self) { index in
-                    sleeveButton(index: index, layout: layout, centerX: centerX)
+                // Each child owns its track. A shrinking playlist must never let a
+                // retained child subscript `tracks` with an index that no longer exists.
+                ForEach(Array(tracks.enumerated()), id: \.offset) { index, track in
+                    sleeveButton(track: track, index: index, layout: layout, centerX: centerX)
                         .id(index)
                         .zIndex(index == focusedIndex ? 1_000 : Double(-abs(index - (focusedIndex ?? 0))))
                 }
@@ -160,26 +162,26 @@ struct PlaylistVinylShelf: View {
     }
 
 
-    private func sleeveButton(index: Int, layout: VinylShelfLayout, centerX: CGFloat) -> some View {
+    private func sleeveButton(track: UnifiedTrack, index: Int, layout: VinylShelfLayout, centerX: CGFloat) -> some View {
         Button {
             withAnimation(reduceMotion ? nil : .smooth(duration: 0.25)) {
                 selection = index
             }
             onPlay(index)
         } label: {
-            sleeveArtwork(index: index, layout: layout, centerX: centerX)
+            sleeveArtwork(track: track, index: index, layout: layout, centerX: centerX)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Play \(tracks[index].name) by \(tracks[index].artistNames)")
+        .accessibilityLabel("Play \(track.name) by \(track.artistNames)")
         .accessibilityValue("\(index + 1) of \(tracks.count)")
         .accessibilityAddTraits(index == focusedIndex ? [.isSelected] : [])
         .accessibilityIdentifier("playlist.vinylSleeve.\(index)")
     }
 
-    private func sleeveArtwork(index: Int, layout: VinylShelfLayout, centerX: CGFloat) -> some View {
+    private func sleeveArtwork(track: UnifiedTrack, index: Int, layout: VinylShelfLayout, centerX: CGFloat) -> some View {
         let motionReduced = reduceMotion
-        return VinylSleeve(track: tracks[index], size: layout.coverSize, focused: index == focusedIndex)
+        return VinylSleeve(track: track, size: layout.coverSize, focused: index == focusedIndex)
             .frame(width: layout.slotWidth, height: layout.coverSize)
             .visualEffect { content, geometry in
                 // Scroll-content margins affect the built-in scroll coordinate

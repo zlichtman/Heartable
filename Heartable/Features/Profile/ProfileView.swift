@@ -264,8 +264,6 @@ struct ProfileView: View {
                             "Your plays, plus Ghost Mode") { ListeningHistoryView() }
                 settingsRow("paintpalette.fill", "Appearance",
                             "App theme and icon") { AppearanceView() }
-                settingsRow("slider.horizontal.3", "Sounds",
-                            "Crossfade and in-app playback volume") { SoundsView() }
                 settingsRow("bell.fill", "Notifications",
                             "Weekly digest and alert preferences") { NotificationsView() }
                 settingsRow("person.crop.circle", "Account",

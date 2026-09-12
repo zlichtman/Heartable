@@ -626,6 +626,7 @@ private struct AddTracksSheet: View {
 /// flipping a toggle shares/unshares the mixtape with that friend.
 private struct ShareMixtapeSheet: View {
     @Environment(ThemeStore.self) private var theme
+    @Environment(BannerCenter.self) private var banners
     @Environment(\.dismiss) private var dismiss
 
     let mixtapeID: UUID
@@ -698,8 +699,14 @@ private struct ShareMixtapeSheet: View {
 
     private func toggle(_ friendID: UUID, on: Bool) async {
         if on {
-            try? await BackendAPI.shared.shareMixtape(id: mixtapeID, friendID: friendID)
-            sharedWith.insert(friendID)
+            do {
+                try await BackendAPI.shared.shareMixtape(id: mixtapeID, friendID: friendID)
+                sharedWith.insert(friendID)
+            } catch {
+                // Never present a failed grant as shared; leave the sheet open to retry.
+                banners.error("Couldn’t share this mixtape. Please try again.")
+                return
+            }
         } else {
             await BackendAPI.shared.unshareMixtape(id: mixtapeID, friendID: friendID)
             sharedWith.remove(friendID)

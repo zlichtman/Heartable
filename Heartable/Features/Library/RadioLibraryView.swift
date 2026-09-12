@@ -233,10 +233,11 @@ private struct WSUMBroadcastView: View {
         let owner = AccountSessionStore.currentOwnerID
         let matches = await Task.detached(priority: .utility) {
             let byTitle = Dictionary(grouping: candidates) { RadioRecordingMatcher.normalized($0.name) }
-            return Dictionary(uniqueKeysWithValues: spins.compactMap { spin -> (String, UnifiedTrack)? in
+            // A feed can repeat a spin id; never let that trap the broadcast view.
+            return Dictionary(spins.compactMap { spin -> (String, UnifiedTrack)? in
                 guard let match = RadioRecordingMatcher.match(spin, in: byTitle[RadioRecordingMatcher.normalized(spin.song)] ?? []) else { return nil }
                 return (spin.id, match)
-            })
+            }, uniquingKeysWith: { first, _ in first })
         }.value
         guard !Task.isCancelled, owner == AccountSessionStore.currentOwnerID else { return }
         cachedMatches = matches

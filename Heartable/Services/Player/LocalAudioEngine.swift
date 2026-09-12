@@ -24,8 +24,8 @@ private actor LocalPlaybackAudioSession {
 /// Two `AVPlayer`s back the engine so crossfade is real: at a track change the
 /// outgoing track fades out on one player while the incoming track fades in on
 /// the other. With crossfade off, only one player is ever audible. Audio prefs
-/// come from `AudioSettings` (read live from the same `@AppStorage` keys
-/// `SoundsView` writes), so the toggles in Settings take effect immediately.
+/// come from `AudioSettings`, read live on every start so stored defaults
+/// (and any values a previous build let the user set) still apply.
 @MainActor
 @Observable
 final class LocalAudioEngine {

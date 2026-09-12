@@ -274,8 +274,9 @@ final class TopTracksRepository {
             range: range,
             providerID: .heartable,
             tracks: stats.map(\.track),
+            // Two stat rows can resolve to one recording key; add rather than trap.
             playCounts: Dictionary(
-                uniqueKeysWithValues: stats.map { ($0.track.key, $0.plays) }
+                stats.map { ($0.track.key, $0.plays) }, uniquingKeysWith: +
             ),
             fetchedAt: Date()
         )

@@ -416,9 +416,6 @@ struct FriendRef: Hashable {
 }
 
 // NOTE: AvatarCircle / ArtworkThumb / relativeShort / relativeLong are shared
-// social atoms defined in FriendsView.swift (same module). Medal colors use the
-// existing global Color(hex:) initializer from Theme.swift to match the RN palette.
-// NOTE: The "Friends" segment renders FriendsHub (FriendsHub.swift) inline; the
-// old toolbar Friends/AddFriend buttons are gone. FriendsView.swift is no longer
-// reached from here but is kept intact; FriendProfileView/AddFriendView remain
+// social atoms defined in Design/Components/SocialAtoms.swift. The "Friends"
+// segment renders FriendsHub inline; FriendProfileView/AddFriendView remain
 // reachable (AddFriendView via the Sent sub-tab, profiles via FriendRef nav).

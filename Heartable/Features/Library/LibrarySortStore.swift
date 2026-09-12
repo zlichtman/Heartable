@@ -4,7 +4,10 @@ import Observation
 /// Drives the Library playlists toolbar: grid/list layout and the sort mode, plus
 /// the two user-customizable orderings (a manual playlist order and the per-provider
 /// priority used by Creator sort) and the per-playlist "last played from" stamps
-/// that power Recent. Everything persists to UserDefaults so it survives launches.
+/// that power Recent. Layout and sort modes are device appearance preferences;
+/// the custom order, provider priority and last-played stamps describe one
+/// account's playlists, so they persist under account-scoped keys and are
+/// reloaded on every account transition.
 @MainActor
 @Observable
 final class LibrarySortStore {
@@ -80,6 +83,7 @@ final class LibrarySortStore {
     private var lastPlayed: [String: TimeInterval]
 
     private let defaults = UserDefaults.standard
+    private var ownerID: UUID?
 
     init() {
         let d = UserDefaults.standard
@@ -88,15 +92,29 @@ final class LibrarySortStore {
         artistSortMode = ArtistSortMode(
             rawValue: d.string(forKey: Keys.artistSort) ?? ""
         ) ?? .alphabetical
-        customOrder = (d.array(forKey: Keys.custom) as? [String]) ?? []
-        lastPlayed = (d.dictionary(forKey: Keys.lastPlayed) as? [String: TimeInterval]) ?? [:]
+        customOrder = []
+        lastPlayed = [:]
+        providerOrder = Self.seededProviderOrder(restored: [])
+    }
 
-        let savedProviders = (d.array(forKey: Keys.providers) as? [String]) ?? []
-        let restored = savedProviders.compactMap(ProviderID.init(rawValue:))
-        // Seed/repair so new sources still appear. Heartable Mixtapes (`.heartable`)
-        // is a normal, reorderable entry — defaults first but isn't pinned there.
+    /// Loads the orderings owned by `ownerID`, or clears them when nil.
+    func activate(ownerID: UUID?) {
+        self.ownerID = ownerID
+        customOrder = (AccountSessionStore.defaultObject(forKey: Keys.custom, ownerID: ownerID) as? [String]) ?? []
+        lastPlayed = (AccountSessionStore.defaultObject(forKey: Keys.lastPlayed, ownerID: ownerID)
+            as? [String: TimeInterval]) ?? [:]
+        let saved = (AccountSessionStore.defaultObject(forKey: Keys.providers, ownerID: ownerID) as? [String]) ?? []
+        providerOrder = Self.seededProviderOrder(restored: saved.compactMap(ProviderID.init(rawValue:)))
+    }
+
+    /// Account shell reset: forget the previous account's orderings in memory.
+    func reset() { activate(ownerID: nil) }
+
+    /// Seed/repair so new sources still appear. Heartable Mixtapes (`.heartable`)
+    /// is a normal, reorderable entry — defaults first but isn't pinned there.
+    private static func seededProviderOrder(restored: [ProviderID]) -> [ProviderID] {
         let seed = [.heartable] + ProviderCatalog.all.map(\.id)
-        providerOrder = restored + seed.filter { !restored.contains($0) }
+        return restored + seed.filter { !restored.contains($0) }
     }
 
     // MARK: - Mutations
@@ -113,17 +131,17 @@ final class LibrarySortStore {
 
     func recordPlayed(_ key: String) {
         lastPlayed[key] = Date().timeIntervalSince1970
-        defaults.set(lastPlayed, forKey: Keys.lastPlayed)
+        AccountSessionStore.setDefault(lastPlayed, forKey: Keys.lastPlayed, ownerID: ownerID)
     }
 
     func setCustomOrder(_ keys: [String]) {
         customOrder = keys
-        defaults.set(keys, forKey: Keys.custom)
+        AccountSessionStore.setDefault(keys, forKey: Keys.custom, ownerID: ownerID)
     }
 
     func setProviderOrder(_ order: [ProviderID]) {
         providerOrder = order
-        defaults.set(order.map(\.rawValue), forKey: Keys.providers)
+        AccountSessionStore.setDefault(order.map(\.rawValue), forKey: Keys.providers, ownerID: ownerID)
     }
 
     // MARK: - Sorting
@@ -144,7 +162,9 @@ final class LibrarySortStore {
 
         case .custom:
             syncCustomOrder(with: playlists)
-            let rank = Dictionary(uniqueKeysWithValues: customOrder.enumerated().map { ($0.element, $0.offset) })
+            // A repeated key must never trap the Library tab; the first position wins.
+            let rank = Dictionary(customOrder.enumerated().map { ($0.element, $0.offset) },
+                                  uniquingKeysWith: { first, _ in first })
             return playlists.sorted { (rank[$0.key] ?? .max) < (rank[$1.key] ?? .max) }
 
         case .creator:
@@ -177,7 +197,8 @@ final class LibrarySortStore {
             }
         }.map(\.key)
         let pruned = customOrder.filter { live.contains($0) }
-        let merged = newOnes + pruned
+        var seen = Set<String>()
+        let merged = (newOnes + pruned).filter { seen.insert($0).inserted }
         if merged != customOrder { setCustomOrder(merged) }
     }
 

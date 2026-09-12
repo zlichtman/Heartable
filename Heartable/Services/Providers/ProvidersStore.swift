@@ -229,6 +229,15 @@ final class ProvidersStore {
         ProviderRegistry.all.filter { connectedIDs.contains($0.id) }
     }
 
+    /// Every service the account is paired with, including ones that currently
+    /// need Reconnect. Library refreshes must be scoped to this set: an adapter
+    /// without a credential answers `.unavailable`, which preserves its cached
+    /// snapshot, whereas omitting it from the list would prune that snapshot as
+    /// if the user had disconnected the service.
+    var libraryProviders: [MusicProvider] {
+        ProviderRegistry.all.filter { pairedIDs.contains($0.id) }
+    }
+
     // MARK: - Restoration
 
     private func recordConnected(
