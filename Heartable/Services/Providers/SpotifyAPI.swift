@@ -90,21 +90,39 @@ enum SpotifyAPI {
     static let pageGap: Duration = .milliseconds(120)
 
     static func savedTracks(token: String, limit: Int) async throws -> [SpotifyTrack] {
-        var out: [SpotifyTrack] = []
+        try await readSavedTrackPages(token: token, limit: limit, transform: { $0 }, onPage: { _ in })
+    }
+
+    /// Normalize and publish each page before requesting the next. Only one raw
+    /// Spotify page is retained; large libraries never keep a second raw copy.
+    static func readSavedTrackPages<Element: Sendable>(
+        token: String, limit: Int,
+        transform: @Sendable (SpotifyTrack) -> Element,
+        onPage: @Sendable ([Element]) async -> Void,
+        gap: Duration = pageGap,
+        fetchPage: @Sendable (String, Int, Int) async throws -> Paged<SavedTrack> = { token, offset, size in
+            try await getJSON("/me/tracks?limit=\(size)&offset=\(offset)", token: token)
+        }
+    ) async throws -> [Element] {
+        var out: [Element] = []
         var offset = 0
         while out.count < limit {
-            let pageSize = min(50, limit - out.count)
-            let page: Paged<SavedTrack> = try await getJSON(
-                "/me/tracks?limit=\(pageSize)&offset=\(offset)",
-                token: token
-            )
-            let items = page.items ?? []
-            out.append(contentsOf: items.compactMap(\.track))
-            if page.next == nil || items.isEmpty { break }
-            offset += items.count
-            try await Task.sleep(for: pageGap)
+            try Task.checkCancellation()
+            let page = try await fetchPage(token, offset, min(50, limit - out.count))
+            let batch = (page.items ?? []).compactMap(\.track)
+                .filter { !$0.id.isEmpty || !$0.uri.isEmpty }
+                .prefix(limit - out.count).map(transform)
+            try Task.checkCancellation()
+            await onPage(batch)
+            out.append(contentsOf: batch)
+            guard page.next != nil else { break }
+            guard page.rawItemCount > 0 else {
+                throw ProviderError("Spotify returned an incomplete liked-songs page. Your saved library is retained.")
+            }
+            offset += page.rawItemCount
+            try await Task.sleep(for: gap)
         }
-        return Array(out.prefix(limit))
+        return out
     }
 
     // MARK: - Playlists
@@ -121,8 +139,9 @@ enum SpotifyAPI {
             )
             let items = (page.items ?? []).filter { !$0.id.isEmpty && !$0.name.isEmpty }
             out.append(contentsOf: items)
-            if page.next == nil || (page.items ?? []).isEmpty { break }
-            offset += (page.items ?? []).count
+            if page.next == nil { break }
+            guard page.rawItemCount > 0 else { throw ProviderError("Spotify returned an incomplete playlist page.") }
+            offset += page.rawItemCount
             try await Task.sleep(for: pageGap)
         }
         return Array(out.prefix(limit))
@@ -140,9 +159,10 @@ enum SpotifyAPI {
                 token: token
             )
             let items = page.items ?? []
-            out.append(contentsOf: items.compactMap(\.track).filter { !$0.id.isEmpty })
-            if page.next == nil || items.isEmpty { break }
-            offset += items.count
+            out.append(contentsOf: items.compactMap(\.track).filter { !$0.id.isEmpty || !$0.uri.isEmpty })
+            if page.next == nil { break }
+            guard page.rawItemCount > 0 else { throw ProviderError("Spotify returned an incomplete track page.") }
+            offset += page.rawItemCount
             try await Task.sleep(for: pageGap)
         }
         return out
@@ -577,10 +597,17 @@ struct SpotifyTrack: Decodable, Sendable {
     let artists: [SpotifyArtist]?
     let album: SpotifyAlbum?
     let durationMs: Int?
+    let isLocal: Bool
+    let isPlayable: Bool?
+    let restrictionReason: String?
 
+    private struct Restrictions: Decodable { let reason: String? }
     private enum CodingKeys: String, CodingKey {
         case id, uri, name, artists, album
         case durationMs = "duration_ms"
+        case isLocal = "is_local"
+        case isPlayable = "is_playable"
+        case restrictions
     }
 
     // Tolerate missing ids/uris (some episode/local rows omit them) so a partial
@@ -593,6 +620,9 @@ struct SpotifyTrack: Decodable, Sendable {
         artists = try? c.decode([SpotifyArtist].self, forKey: .artists)
         album = try? c.decode(SpotifyAlbum.self, forKey: .album)
         durationMs = try? c.decode(Int.self, forKey: .durationMs)
+        isLocal = (try? c.decode(Bool.self, forKey: .isLocal)) ?? uri.hasPrefix("spotify:local:")
+        isPlayable = try? c.decode(Bool.self, forKey: .isPlayable)
+        restrictionReason = (try? c.decode(Restrictions.self, forKey: .restrictions))?.reason
     }
 }
 
@@ -685,7 +715,7 @@ private struct SearchResult: Decodable {
     let tracks: Paged<SpotifyTrack>?
 }
 
-private struct SavedTrack: Decodable {
+struct SavedTrack: Decodable, Sendable {
     let track: SpotifyTrack?
 }
 
@@ -707,6 +737,8 @@ private struct PlaylistTrackItem: Decodable {
 struct Paged<T: Decodable>: Decodable {
     let items: [T]?
     let next: String?
+    /// Cursor movement counts the source slots, including deleted/malformed rows.
+    let rawItemCount: Int
 
     private enum CodingKeys: String, CodingKey { case items, next }
 
@@ -720,7 +752,11 @@ struct Paged<T: Decodable>: Decodable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         // Missing/null items is not proof that the user's library is empty.
-        items = try container.decode([LenientRow].self, forKey: .items).compactMap(\.value)
+        let rows = try container.decode([LenientRow].self, forKey: .items)
+        rawItemCount = rows.count
+        items = rows.compactMap(\.value)
         next = try container.decodeIfPresent(String.self, forKey: .next)
     }
 }
+
+extension Paged: Sendable where T: Sendable {}

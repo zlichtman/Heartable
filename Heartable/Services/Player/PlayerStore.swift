@@ -370,6 +370,10 @@ final class PlayerStore {
 
     func play(tracks: [UnifiedTrack], startingAt: Int? = nil,
               mode: ShuffleMode = .order, weights: [String: Int] = [:]) async {
+        if let startingAt, tracks.indices.contains(startingAt), !ProviderPlayback.isPlayable(tracks[startingAt]) {
+            showFeedback(tracks[startingAt].playbackUnavailableReason ?? "This song isn’t available for playback in Heartable.")
+            return
+        }
         queue = PlaybackQueue(tracks: tracks, startingAt: startingAt, mode: mode, weights: weights)
         guard queue.current != nil else {
             showFeedback("These songs aren’t available for playback in Heartable.")

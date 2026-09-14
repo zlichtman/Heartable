@@ -30,6 +30,7 @@ protocol MusicProvider: Sendable {
     /// must never be interpreted as an empty library or a deleted playlist.
     func readTopTracks(range: StatRange, limit: Int) async -> ProviderRead<UnifiedTrack>
     func readLikedTracks(limit: Int) async -> ProviderRead<UnifiedTrack>
+    func readLikedTracks(limit: Int, onPage: @escaping @Sendable ([UnifiedTrack]) async -> Void) async -> ProviderRead<UnifiedTrack>
     func readPlaylists() async -> ProviderRead<UnifiedPlaylist>
     func readPlaylistTracks(_ playlistID: String) async -> ProviderRead<UnifiedTrack>
 
@@ -44,6 +45,11 @@ extension MusicProvider {
     }
     func readLikedTracks(limit: Int) async -> ProviderRead<UnifiedTrack> {
         .legacy(await likedTracks(limit: limit))
+    }
+    func readLikedTracks(limit: Int, onPage: @escaping @Sendable ([UnifiedTrack]) async -> Void) async -> ProviderRead<UnifiedTrack> {
+        let result = await readLikedTracks(limit: limit)
+        if let items = result.items { await onPage(items) }
+        return result
     }
     func readPlaylists() async -> ProviderRead<UnifiedPlaylist> {
         .legacy(await playlists())

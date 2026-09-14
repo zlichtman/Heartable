@@ -22,6 +22,9 @@ enum ProviderRegistry {
     }
 
     static func playUnified(_ track: UnifiedTrack) async throws {
+        guard ProviderPlayback.isPlayable(track) else {
+            throw ProviderError(track.playbackUnavailableReason ?? "This song isn’t available for playback in Heartable.")
+        }
         try await providerForTrack(track).play(track)
     }
 

@@ -41,6 +41,8 @@ final class LibraryStore {
     private(set) var artists: [ArtistAgg] = []
     private(set) var loading = false
     private(set) var refreshing = false
+    private(set) var loadingLiked = false
+    @ObservationIgnored private var likedPagePositions: [String: Int] = [:]
     /// Why the last refresh could not reach a service, in user words. nil when
     /// every requested provider answered. Cached content stays on screen.
     private(set) var providerNotice: String?
@@ -158,16 +160,25 @@ final class LibraryStore {
         }
         guard !refreshing else { return }
         refreshing = true
+        loadingLiked = true
+        likedPagePositions = Dictionary(likedTracks.enumerated().map { ($0.element.key, $0.offset) },
+                                        uniquingKeysWith: { first, _ in first })
         loading = playlists.isEmpty && topTracks.isEmpty && likedTracks.isEmpty
         defer {
-            loading = false
-            refreshing = false
+            if lifecycleID == requestID {
+                loading = false
+                loadingLiked = false
+                refreshing = false
+                likedPagePositions = [:]
+            }
         }
 
         async let top = ProviderCacheMerge.gather(providers) { await $0.readTopTracks(range: .mediumTerm, limit: 50) }
-        // High cap so the master Liked list pulls a full library (Spotify pages
-        // 50/request until exhausted), not just the first page.
-        async let liked = ProviderCacheMerge.gather(providers) { await $0.readLikedTracks(limit: 10000) }
+        async let liked = ProviderCacheMerge.gather(providers) { provider in
+            await provider.readLikedTracks(limit: provider.id == .spotify ? Int.max : 10000) { [weak self] batch in
+                await self?.publishLikedPage(batch, ownerID: ownerID, requestID: requestID)
+            }
+        }
         async let pls = ProviderCacheMerge.gather(providers) { await $0.readPlaylists() }
         async let tapes = BackendAPI.shared.fetchMixtapesIfAvailable()
 
@@ -202,6 +213,7 @@ final class LibraryStore {
 
         let topReads = await top
         let likedReads = await liked
+        if lifecycleID == requestID { loadingLiked = false }
         guard lifecycleID == requestID,
               AccountSessionStore.currentOwnerID == ownerID else { return }
         for id in orderedIDs {
@@ -249,6 +261,21 @@ final class LibraryStore {
         loadedProviders = providerIDs
         await saveCache(providerIDs: providerIDs, ownerID: ownerID)
         warmVisibleArtwork()
+    }
+
+    /// Partial pages can add/update rows, but never prove removal. Final success
+    /// replaces the provider snapshot; failure retains old and newly received rows.
+    private func publishLikedPage(_ batch: [UnifiedTrack], ownerID: UUID, requestID: UUID) {
+        guard lifecycleID == requestID, AccountSessionStore.currentOwnerID == ownerID,
+              !Task.isCancelled else { return }
+        for track in batch {
+            if let index = likedPagePositions[track.key], likedTracks.indices.contains(index) {
+                likedTracks[index] = track.preservingArtwork(from: likedTracks[index])
+            } else {
+                likedPagePositions[track.key] = likedTracks.count
+                likedTracks.append(track)
+            }
+        }
     }
 
     /// Preload the artwork users are most likely to see next. Cached library
@@ -331,6 +358,8 @@ final class LibraryStore {
         libraryTracks = []
         loading = false
         refreshing = false
+        loadingLiked = false
+        likedPagePositions = [:]
         providerNotice = nil
         indexingArtists = false
         didBuildArtistIndex = false

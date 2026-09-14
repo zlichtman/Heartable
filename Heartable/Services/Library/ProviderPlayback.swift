@@ -19,6 +19,15 @@ enum ProviderPlayback {
 
     static func isPlayable(_ id: ProviderID) -> Bool { tier(for: id) != .none }
 
+    static func isPlayable(_ track: UnifiedTrack) -> Bool {
+        guard isPlayable(track.providerID), track.playbackUnavailableReason == nil else { return false }
+        if track.providerID == .spotify {
+            return !track.providerTrackID.isEmpty && track.uri.hasPrefix("spotify:track:")
+                && !track.uri.dropFirst("spotify:track:".count).isEmpty
+        }
+        return true
+    }
+
     /// Short user-facing note for a source in the picker (no em-dashes).
     static func label(for id: ProviderID) -> String {
         switch tier(for: id) {

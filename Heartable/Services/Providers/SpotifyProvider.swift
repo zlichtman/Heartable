@@ -54,10 +54,15 @@ struct SpotifyProvider: MusicProvider {
     }
 
     func readLikedTracks(limit: Int) async -> ProviderRead<UnifiedTrack> {
+        await readLikedTracks(limit: limit, onPage: { _ in })
+    }
+
+    func readLikedTracks(limit: Int, onPage: @escaping @Sendable ([UnifiedTrack]) async -> Void) async -> ProviderRead<UnifiedTrack> {
         guard let token = await SpotifyAuth.getValidAccessToken() else { return .unavailable }
         do {
-            return .success(try await SpotifyAPI.savedTracks(token: token, limit: limit)
-                .map(Self.mapTrack))
+            return .success(try await SpotifyAPI.readSavedTrackPages(
+                token: token, limit: limit, transform: Self.mapTrack, onPage: onPage
+            ))
         } catch {
             return .unavailable
         }
@@ -115,13 +120,13 @@ struct SpotifyProvider: MusicProvider {
 
     // MARK: - Mapping
 
-    private static func mapTrack(_ t: SpotifyTrack) -> UnifiedTrack {
+    static func mapTrack(_ t: SpotifyTrack) -> UnifiedTrack {
         let artists = (t.artists ?? []).map {
             UnifiedArtist(id: $0.id ?? "", name: $0.name ?? "")
         }
         let artURL = t.album?.images?.first?.url.flatMap(URL.init(string:))
         return UnifiedTrack(
-            key: trackKey(.spotify, t.id),
+            key: trackKey(.spotify, t.id.isEmpty ? t.uri : t.id),
             providerID: .spotify,
             providerTrackID: t.id,
             uri: t.uri,
@@ -129,7 +134,9 @@ struct SpotifyProvider: MusicProvider {
             artists: artists,
             album: t.album?.name,
             albumArt: artURL,
-            durationMs: t.durationMs ?? 0
+            durationMs: max(0, t.durationMs ?? 0),
+            playbackUnavailableReason: t.isLocal ? "Local file · unavailable in Heartable"
+                : (t.isPlayable == false || t.restrictionReason != nil ? "Unavailable on Spotify" : nil)
         )
     }
 

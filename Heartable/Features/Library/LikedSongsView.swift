@@ -12,34 +12,46 @@ struct LikedSongsView: View {
     private var tracks: [UnifiedTrack] { store.likedTracks }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                if let notice = store.providerNotice {
-                    Text(notice)
+        List {
+            header
+                .listRowSeparator(.hidden)
+                .listRowBackground(theme.palette.bg)
+            if let notice = store.providerNotice {
+                Text(notice)
+                    .font(Typography.body(13))
+                    .foregroundStyle(theme.palette.textSecondary)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(theme.palette.bg)
+            }
+            if tracks.isEmpty && !store.loadingLiked {
+                Text("No Heartables yet. Like a song on any service and it lands here.")
+                    .font(Typography.body(14))
+                    .foregroundStyle(theme.palette.textSecondary)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(theme.palette.bg)
+            }
+            ForEach(tracks) { track in
+                UnifiedTrackRow(track: track, isEnabled: ProviderPlayback.isPlayable(track)) {
+                    guard let index = tracks.firstIndex(where: { $0.key == track.key }) else { return }
+                    Task { await player.play(tracks: tracks, startingAt: index,
+                                             mode: prefs.mode, weights: prefs.weights) }
+                }
+                .listRowSeparator(.hidden)
+                .listRowBackground(theme.palette.bg)
+            }
+            if store.loadingLiked {
+                HStack {
+                    ProgressView()
+                    Text("Loading Heartables… \(tracks.count) songs available")
                         .font(Typography.body(13))
                         .foregroundStyle(theme.palette.textSecondary)
                 }
-                if tracks.isEmpty {
-                    Text((store.loading || store.refreshing) ? "Loading…" : "No Heartables yet. Like a song on any service and it lands here.")
-                        .font(Typography.body(14))
-                        .foregroundStyle(theme.palette.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.top, 40)
-                } else {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(tracks.enumerated()), id: \.offset) { index, track in
-                            UnifiedTrackRow(track: track) {
-                                Task { await player.play(tracks: tracks, startingAt: index,
-                                                         mode: prefs.mode, weights: prefs.weights) }
-                            }
-                        }
-                    }
-                }
+                .listRowSeparator(.hidden)
+                .listRowBackground(theme.palette.bg)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
         }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
         .background(theme.palette.bg.ignoresSafeArea())
         .navigationTitle("Heartables")
         .navigationBarTitleDisplayMode(.inline)
@@ -65,7 +77,7 @@ struct LikedSongsView: View {
                     .foregroundStyle(theme.palette.textSecondary)
             }
             Spacer(minLength: 4)
-            if !tracks.isEmpty {
+            if tracks.contains(where: { ProviderPlayback.isPlayable($0) }) {
                 Button {
                     Task { await player.play(tracks: tracks, mode: prefs.mode, weights: prefs.weights) }
                 } label: {

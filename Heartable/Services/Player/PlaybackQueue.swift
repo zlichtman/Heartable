@@ -22,7 +22,7 @@ struct PlaybackQueue {
     init(tracks: [UnifiedTrack] = [], startingAt: Int? = nil,
          mode: ShuffleMode = .order, weights: [String: Int] = [:]) {
         original = tracks.enumerated().compactMap {
-            ProviderPlayback.isPlayable($0.element.providerID) ? Entry(id: $0.offset, track: $0.element) : nil
+            ProviderPlayback.isPlayable($0.element) ? Entry(id: $0.offset, track: $0.element) : nil
         }
         let selected = startingAt.flatMap { position in original.first { $0.id == position } }
         if mode == .order {

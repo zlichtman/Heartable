@@ -49,7 +49,7 @@ struct MasterTrack: Identifiable, Hashable, Sendable, Codable {
     }
 
     /// True if at least one source can actually play (full or preview).
-    var isPlayable: Bool { sources.contains { ProviderPlayback.isPlayable($0.providerID) } }
+    var isPlayable: Bool { sources.contains { ProviderPlayback.isPlayable($0) } }
 
     // MARK: - Display (richest source wins)
 
@@ -108,7 +108,7 @@ struct MasterTrack: Identifiable, Hashable, Sendable, Codable {
     /// if unspecified).
     func bestPlaybackSource(order: [ProviderID] = []) -> UnifiedTrack? {
         sources
-            .filter { ProviderPlayback.isPlayable($0.providerID) }
+            .filter { ProviderPlayback.isPlayable($0) }
             .min { lhs, rhs in
                 let lt = ProviderPlayback.tier(for: lhs.providerID)
                 let rt = ProviderPlayback.tier(for: rhs.providerID)
@@ -122,7 +122,7 @@ struct MasterTrack: Identifiable, Hashable, Sendable, Codable {
     /// Playable sources ordered for the "Play from" picker (best first).
     func playableSources(order: [ProviderID] = []) -> [UnifiedTrack] {
         sources
-            .filter { ProviderPlayback.isPlayable($0.providerID) }
+            .filter { ProviderPlayback.isPlayable($0) }
             .sorted { lhs, rhs in
                 let lt = ProviderPlayback.tier(for: lhs.providerID)
                 let rt = ProviderPlayback.tier(for: rhs.providerID)

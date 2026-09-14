@@ -76,6 +76,10 @@ struct UnifiedTrackRow: View {
                                 .foregroundStyle(theme.palette.rose)
                         }
                     }
+                    if let reason = track.playbackUnavailableReason {
+                        Text(reason).font(Typography.body(11))
+                            .foregroundStyle(theme.palette.textMuted).lineLimit(1)
+                    }
                     if listStyle == .blocks, let statText {
                         Text(statText)
                             .font(Typography.semibold(11))

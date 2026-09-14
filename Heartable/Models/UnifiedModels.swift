@@ -22,6 +22,9 @@ struct UnifiedTrack: Identifiable, Hashable, Sendable, Codable {
     let album: String?
     let albumArt: URL?
     let durationMs: Int
+    /// Nil also decodes older caches. Unavailable songs stay in the library and
+    /// backups, but cannot enter a provider playback queue.
+    var playbackUnavailableReason: String? = nil
 
     var id: String { key }
     var artistNames: String { artists.map(\.name).joined(separator: ", ") }
@@ -40,7 +43,8 @@ struct UnifiedTrack: Identifiable, Hashable, Sendable, Codable {
             artists: artists,
             album: album,
             albumArt: cachedArt,
-            durationMs: durationMs
+            durationMs: durationMs,
+            playbackUnavailableReason: playbackUnavailableReason
         )
     }
 }
