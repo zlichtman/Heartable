@@ -2,6 +2,13 @@
 
 This is the authoritative release path for Heartable.
 
+User preference: after completing and validating Heartable changes, publish a
+new TestFlight build as part of the task without asking again. Follow the
+existing release workflow, verify App Store Connect processing and availability
+to the existing testers, and report the actual version/build. A local fix or a
+successful CI run alone does not finish delivery. Report any concrete blocker;
+never claim a build is available before confirming it.
+
 ## Canonical identity
 
 | Item | Value |

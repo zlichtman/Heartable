@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import CryptoKit
+import ImageIO
 
 struct ArtworkDiskEntry: Sendable {
     let data: Data
@@ -300,9 +301,19 @@ final class ArtworkImageCache {
         images.setObject(image, forKey: url as NSURL, cost: cost)
     }
 
-    private nonisolated static func decode(_ data: Data) async -> UIImage? {
+    nonisolated static func decode(_ data: Data) async -> UIImage? {
         await Task.detached(priority: .userInitiated) {
-            UIImage(data: data)
+            // Bound decoded pixels before allocating a bitmap. Compressed file
+            // size and NSCache limits cannot bound a full-resolution decode.
+            guard let source = CGImageSourceCreateWithData(data as CFData,
+                [kCGImageSourceShouldCache: false] as CFDictionary),
+                let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 1_024,
+                    kCGImageSourceShouldCacheImmediately: true
+                ] as CFDictionary) else { return nil }
+            return UIImage(cgImage: thumbnail)
         }.value
     }
 

@@ -475,7 +475,10 @@ xcodebuild \
   test
 ```
 
-For release work, follow `docs/RELEASE.md`. A build is not shipped merely
+After completing and validating Heartable changes, always deliver a new
+TestFlight build as part of the task; this is the user's standing authorization.
+Verify the processed build and availability to existing testers before calling
+it delivered. Follow `docs/RELEASE.md` for this release work. A build is not shipped merely
 because compilation succeeded: confirm migrations, signing, archive upload,
 TestFlight processing, launch metadata, privacy disclosures, age rating,
 review access, and the public testing state.

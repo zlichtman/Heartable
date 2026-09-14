@@ -47,6 +47,21 @@ enum SpotifyAPI {
         try await getJSON("/me", token: token)
     }
 
+    /// Verify the exact SDK credential independently of library-read backoff.
+    /// Never substitute the Web API token on 401: that would hide an account mismatch.
+    static func playbackUser(
+        token: String,
+        send: @Sendable (URL, [String: String]) async throws -> (Data, HTTPURLResponse) = {
+            try await HTTPClient.send($0, headers: $1, retryRateLimits: false)
+        }
+    ) async throws -> SpotifyUser {
+        let (data, response) = try await send(URL(string: "\(base)/me")!, bearer(token))
+        guard (200..<300).contains(response.statusCode) else {
+            throw ProviderError("Spotify couldn’t verify the playback account (\(response.statusCode)). Try again shortly.")
+        }
+        return try JSONDecoder().decode(SpotifyUser.self, from: data)
+    }
+
     // MARK: - Top tracks
 
     static func topTracks(token: String, range: StatRange, limit: Int) async throws -> [SpotifyTrack] {
@@ -321,8 +336,8 @@ enum SpotifyAPI {
                     case .none:
                         throw NoActiveDeviceError()
                     case .unavailable:
-                        throw ProviderError(
-                            "Spotify found devices, but none can accept playback."
+                        throw SpotifyPlaybackRestrictedError(
+                            message: "Spotify found devices, but none can accept Connect playback."
                         )
                     case .unauthorized:
                         throw ProviderError("Session expired. Reconnect Spotify.")
@@ -354,6 +369,7 @@ enum SpotifyAPI {
                 continue
             }
 
+            if resp.statusCode == 404 { throw NoActiveDeviceError() }
             let message = parsePlayError(status: resp.statusCode, data: data)
             if resp.statusCode == 403, message.localizedCaseInsensitiveContains("restriction") {
                 var detail = message

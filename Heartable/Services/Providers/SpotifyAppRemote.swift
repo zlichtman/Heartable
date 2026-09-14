@@ -108,8 +108,8 @@ final class SpotifyAppRemote: NSObject, @preconcurrency SPTAppRemoteDelegate {
                 guard let webToken = await SpotifyAuth.getValidAccessToken() else {
                     throw ProviderError("Reconnect Spotify in Music Services.")
                 }
-                async let expected = SpotifyAPI.me(token: webToken)
-                async let actual = SpotifyAPI.me(token: token)
+                async let expected = SpotifyAPI.playbackUser(token: webToken)
+                async let actual = SpotifyAPI.playbackUser(token: token)
                 let (webUser, appUser) = try await (expected, actual)
                 guard requestID == request, ownerID == AccountSessionStore.currentOwnerID else { return }
                 guard webUser.id == appUser.id else {

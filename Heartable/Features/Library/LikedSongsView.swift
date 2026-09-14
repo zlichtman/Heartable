@@ -15,8 +15,13 @@ struct LikedSongsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                if let notice = store.providerNotice {
+                    Text(notice)
+                        .font(Typography.body(13))
+                        .foregroundStyle(theme.palette.textSecondary)
+                }
                 if tracks.isEmpty {
-                    Text(store.loading ? "Loading…" : "No Heartables yet. Like a song on any service and it lands here.")
+                    Text((store.loading || store.refreshing) ? "Loading…" : "No Heartables yet. Like a song on any service and it lands here.")
                         .font(Typography.body(14))
                         .foregroundStyle(theme.palette.textSecondary)
                         .frame(maxWidth: .infinity)

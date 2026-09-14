@@ -1,7 +1,24 @@
 import XCTest
+import UIKit
 @testable import Heartable
 
 final class ArtworkDiskCacheTests: XCTestCase {
+    @MainActor func testLargeArtworkIsDownsampledBeforeCaching() async throws {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        let original = UIGraphicsImageRenderer(size: CGSize(width: 4096, height: 2048), format: format)
+            .image { context in
+                UIColor.red.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 4096, height: 2048))
+            }
+        let data = try XCTUnwrap(original.jpegData(compressionQuality: 0.8))
+        let decoded = await ArtworkImageCache.decode(data)
+        let bitmap = try XCTUnwrap(decoded?.cgImage)
+        XCTAssertEqual(bitmap.width, 1024)
+        XCTAssertEqual(bitmap.height, 512)
+        XCTAssertLessThanOrEqual(bitmap.bytesPerRow * bitmap.height, 3 * 1024 * 1024)
+    }
+
     func testOnlyNetworkArtworkURLsAreCacheable() {
         XCTAssertTrue(ArtworkDiskCache.canCache(URL(string: "https://images.example/cover.jpg")!))
         XCTAssertTrue(ArtworkDiskCache.canCache(URL(string: "http://images.example/artist.jpg")!))

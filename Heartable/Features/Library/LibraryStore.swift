@@ -210,6 +210,13 @@ final class LibraryStore {
             libraryLog.notice("liked \(id.rawValue, privacy: .public): \(liked, privacy: .public); top: \(top, privacy: .public)")
         }
 
+        let failedIDs = orderedIDs.filter {
+            playlistReads[$0]?.items == nil || likedReads[$0]?.items == nil || topReads[$0]?.items == nil
+        }
+        providerNotice = await Self.notice(for: failedIDs, reads: [:])
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
+
         topTracks = preservingTrackArtwork(dedupeTracks(ProviderCacheMerge.merge(
             cached: topTracks, providers: orderedIDs, reads: topReads, providerID: { $0.providerID }
         )), cached: topTracks)
