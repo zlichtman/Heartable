@@ -1,0 +1,29 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+:root { --background:#fbf1e8; --foreground:#503c33; --primary:#8a453e; --primary-foreground:#fff8f3; --border:#dfcabe; --muted:#eadecf; --muted-foreground:#785f53; color-scheme:light; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--background); color:var(--foreground); font-family:Arial, sans-serif; font-size:1rem; line-height:1.6; }
+main { width:min(900px,100% - 48px); margin:auto; }
+header { display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding:28px 0; border-bottom:1px solid var(--border); }
+.brand { font:700 1.65rem Georgia,serif; text-decoration:none; color:var(--foreground); }
+header span,.eyebrow,footer { color:var(--muted-foreground); font-size:.875rem; }
+h1,h2 { font-family:Georgia,serif; line-height:1.15; overflow-wrap:anywhere; }
+h1 { font-size:clamp(2.4rem,6vw,4rem); margin:10px 0 20px; }
+h2 { font-size:1.4rem; margin:0; }
+.dedication { padding:56px 0 44px; display:flex; gap:36px; align-items:center; }
+.dedication>div { min-width:0; }
+.cover { width:240px; aspect-ratio:1; object-fit:cover; border-radius:8px; box-shadow:0 12px 30px #503c3322; }
+.description,.note { white-space:pre-wrap; overflow-wrap:anywhere; }
+.open,button { display:inline-flex; gap:22px; align-items:center; padding:12px 22px; margin-top:14px; border:0; border-radius:30px; background:var(--primary); color:var(--primary-foreground); text-decoration:none; font:inherit; cursor:pointer; min-height:44px; }
+.tracks { list-style:none; padding:0; margin:0; border-top:1px solid var(--border); }
+.tracks li { display:flex; gap:24px; padding:28px 0; border-bottom:1px solid var(--border); }
+.number { min-width:30px; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
+.track-content { min-width:0; flex:1; }
+.artist { margin:8px 0 0; color:var(--muted-foreground); }
+.note { margin:24px 0 0; padding:0 0 0 18px; border-left:3px solid #cf7592; }
+.photo { display:block; width:min(100%,420px); height:auto; border-radius:6px; margin-top:22px; }
+footer { padding:40px 0 56px; }
+.empty { padding:72px 0; }
+a:focus-visible,button:focus-visible { outline:3px solid #b84e75; outline-offset:5px; }
+@media(max-width:600px) { main { width:calc(100% - 36px); } .dedication { display:block; padding-top:32px; } .cover { width:min(100%,280px); margin-bottom:24px; } header { flex-wrap:wrap; } }
