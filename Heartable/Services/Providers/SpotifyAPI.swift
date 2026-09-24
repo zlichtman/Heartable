@@ -1,0 +1,786 @@
+import Foundation
+import os
+
+private let spotifyLog = Logger(subsystem: "com.zlichtman.heartable", category: "spotify")
+
+/// Thrown when Spotify Connect has no device to target. The Web API can't conjure
+/// one. Typed so the in-app device chooser/fallback path is deterministic instead
+/// of string-matching error messages. Ported from the RN `NoActiveDeviceError`.
+/// Spotify's Web API refused to drive the current device or context
+/// ("restriction violated"). The official SDK can still start the song inside
+/// the Spotify app, so the player treats this like a missing device and hands
+/// off rather than blaming the user's subscription.
+struct SpotifyPlaybackRestrictedError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
+struct NoActiveDeviceError: LocalizedError {
+    var errorDescription: String? {
+        "Spotify has not exposed a playback device yet."
+    }
+}
+
+/// Keeps "there are no devices" distinct from auth, permission, rate-limit, and
+/// transport failures. An empty array previously collapsed all of these states and
+/// made Heartable present a chooser that could never contain an option.
+enum SpotifyDeviceDiscovery: Sendable {
+    case available([SpotifyDevice])
+    case none
+    case unavailable
+    case unauthorized
+    case forbidden
+    case rateLimited(TimeInterval)
+    case failed
+}
+
+/// Spotify Web API client, ported from the RN `src/spotify/api.ts`. All reads take
+/// a bearer token; the player methods drive the user's active Spotify Connect
+/// device. `play` retries on 404/502 by transferring to an available device, and
+/// throws `NoActiveDeviceError` when no device exists anywhere.
+enum SpotifyAPI {
+    private static let base = "https://api.spotify.com/v1"
+
+    // MARK: - User
+
+    static func me(token: String) async throws -> SpotifyUser {
+        try await getJSON("/me", token: token)
+    }
+
+    /// Verify the exact SDK credential independently of library-read backoff.
+    /// Never substitute the Web API token on 401: that would hide an account mismatch.
+    static func playbackUser(
+        token: String,
+        send: @Sendable (URL, [String: String]) async throws -> (Data, HTTPURLResponse) = {
+            try await HTTPClient.send($0, headers: $1, retryRateLimits: false)
+        }
+    ) async throws -> SpotifyUser {
+        let (data, response) = try await send(URL(string: "\(base)/me")!, bearer(token))
+        guard (200..<300).contains(response.statusCode) else {
+            throw ProviderError("Spotify couldn’t verify the playback account (\(response.statusCode)). Try again shortly.")
+        }
+        return try JSONDecoder().decode(SpotifyUser.self, from: data)
+    }
+
+    // MARK: - Top tracks
+
+    static func topTracks(token: String, range: StatRange, limit: Int) async throws -> [SpotifyTrack] {
+        // Spotify accepts at most 50 items for this endpoint. Passing the
+        // repository's wider display limit used to turn a working stats request
+        // into a 400 and an empty Spotify section.
+        let limit = normalizedTopTracksLimit(limit)
+        let page: Paged<SpotifyTrack> = try await getJSON(
+            "/me/top/tracks?time_range=\(range.rawValue)&limit=\(limit)",
+            token: token
+        )
+        return (page.items ?? []).filter { !$0.id.isEmpty }
+    }
+
+    static func normalizedTopTracksLimit(_ requested: Int) -> Int {
+        min(max(requested, 1), 50)
+    }
+
+    // MARK: - Saved (liked) tracks
+
+    /// Pages through `/me/tracks` (50/page) until `limit` is reached or there's no
+    /// next page.
+    /// Spotify rate-limits on a rolling window. A cold library pull is hundreds
+    /// of pages; a small gap between pages keeps a full sync under the limit
+    /// instead of earning a multi-hour Retry-After for the whole app.
+    static let pageGap: Duration = .milliseconds(120)
+
+    /// Normalize and publish each page before requesting the next. Only one raw
+    /// Spotify page is retained; large libraries never keep a second raw copy.
+    static func readSavedTrackPages<Element: Sendable>(
+        token: String, limit: Int,
+        transform: @Sendable (SpotifyTrack) -> Element,
+        onPage: @Sendable ([Element]) async -> Void,
+        gap: Duration = pageGap,
+        fetchPage: @Sendable (String, Int, Int) async throws -> Paged<SavedTrack> = { token, offset, size in
+            try await getJSON("/me/tracks?limit=\(size)&offset=\(offset)", token: token)
+        }
+    ) async throws -> [Element] {
+        var out: [Element] = []
+        var offset = 0
+        while out.count < limit {
+            try Task.checkCancellation()
+            let page = try await fetchPage(token, offset, min(50, limit - out.count))
+            let batch = (page.items ?? []).compactMap(\.track)
+                .filter { !$0.id.isEmpty || !$0.uri.isEmpty }
+                .prefix(limit - out.count).map(transform)
+            try Task.checkCancellation()
+            await onPage(batch)
+            out.append(contentsOf: batch)
+            guard page.next != nil else { break }
+            guard page.rawItemCount > 0 else {
+                throw ProviderError("Spotify returned an incomplete liked-songs page. Your saved library is retained.")
+            }
+            offset += page.rawItemCount
+            try await Task.sleep(for: gap)
+        }
+        return out
+    }
+
+    // MARK: - Playlists
+
+    /// Pages through `/me/playlists` up to `limit`.
+    static func myPlaylists(token: String, limit: Int) async throws -> [SpotifyPlaylist] {
+        var out: [SpotifyPlaylist] = []
+        var offset = 0
+        while out.count < limit {
+            let pageSize = min(50, limit - out.count)
+            let page: Paged<SpotifyPlaylist> = try await getJSON(
+                "/me/playlists?limit=\(pageSize)&offset=\(offset)",
+                token: token
+            )
+            let items = (page.items ?? []).filter { !$0.id.isEmpty && !$0.name.isEmpty }
+            out.append(contentsOf: items)
+            if page.next == nil { break }
+            guard page.rawItemCount > 0 else { throw ProviderError("Spotify returned an incomplete playlist page.") }
+            offset += page.rawItemCount
+            try await Task.sleep(for: pageGap)
+        }
+        return Array(out.prefix(limit))
+    }
+
+    /// Spotify caps a playlist at 10,000 items; anything past that is a paging
+    /// loop that will never end, not a bigger playlist.
+    static let playlistItemCap = 10_000
+
+    /// Pages through every track in a playlist via `/playlists/{id}/items`.
+    /// Spotify now 403s the older `/tracks` alias for some apps; `/items` is the
+    /// supported endpoint (the playable nests under `item`, not `track`).
+    static func playlistTracks(token: String, id: String) async throws -> [SpotifyTrack] {
+        try await readPlaylistTrackPages(token: token, id: id, transform: { $0 })
+    }
+
+    /// Normalize each page before requesting the next, so only one raw Spotify
+    /// page is ever alive, and stop the moment the caller is cancelled: a user
+    /// leaving a 5,000-song playlist must not keep spending the read budget.
+    static func readPlaylistTrackPages<Element: Sendable>(
+        token: String, id: String,
+        maxItems: Int = playlistItemCap,
+        transform: @Sendable (SpotifyTrack) -> Element,
+        gap: Duration = pageGap,
+        fetchPage: @Sendable (String, String, Int) async throws -> Paged<PlaylistTrackItem> = { token, id, offset in
+            try await getJSON("/playlists/\(id)/items?limit=50&offset=\(offset)", token: token)
+        }
+    ) async throws -> [Element] {
+        var out: [Element] = []
+        var offset = 0
+        while true {
+            try Task.checkCancellation()
+            let page = try await fetchPage(token, id, offset)
+            let batch = (page.items ?? []).compactMap(\.track)
+                .filter { !$0.id.isEmpty || !$0.uri.isEmpty }
+                .map(transform)
+            out.append(contentsOf: batch)
+            guard page.next != nil else { break }
+            guard page.rawItemCount > 0 else { throw ProviderError("Spotify returned an incomplete track page.") }
+            offset += page.rawItemCount
+            guard offset < maxItems else { throw ProviderError("Spotify kept paging past \(maxItems) items.") }
+            try await Task.sleep(for: gap)
+        }
+        return out
+    }
+
+    // MARK: - Search
+
+    static func search(token: String, q: String, limit: Int) async throws -> [SpotifyTrack] {
+        let query = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return [] }
+        let safeLimit = min(max(1, limit), 50)
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&=?+")
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: allowed) ?? query
+        let result: SearchResult = try await getJSON(
+            "/search?q=\(encoded)&type=track&limit=\(safeLimit)",
+            token: token
+        )
+        return (result.tracks?.items ?? []).filter { !$0.id.isEmpty }
+    }
+
+    // MARK: - Artist images
+
+    /// Real artist photos via `/artists?ids=` (track artist objects carry only an
+    /// id + name, no image). Spotify caps `ids` at 50 per call, so this pages in
+    /// chunks and returns id → best image URL. Best-effort: a failed chunk is
+    /// skipped rather than thrown, so partial results still enrich the UI.
+    static func artistImages(token: String, ids: [String]) async -> [String: URL] {
+        let unique = Array(Set(ids.filter { !$0.isEmpty }))
+        guard !unique.isEmpty else { return [:] }
+        var out: [String: URL] = [:]
+        var i = 0
+        while i < unique.count {
+            let chunk = Array(unique[i..<min(i + 50, unique.count)])
+            i += 50
+            let joined = chunk.joined(separator: ",")
+            guard let result: ArtistsResponse = try? await getJSON("/artists?ids=\(joined)", token: token) else { continue }
+            for a in result.artists ?? [] {
+                guard let id = a.id, let urlStr = a.images?.first?.url, let url = URL(string: urlStr) else { continue }
+                out[id] = url
+            }
+        }
+        return out
+    }
+
+    // MARK: - Player
+
+    static func recentlyPlayed(token: String) async throws -> [SpotifyRecentPlay] {
+        let response: SpotifyRecentHistory = try await getJSON(
+            "/me/player/recently-played?limit=50", token: token
+        )
+        return response.items ?? []
+    }
+
+    /// Result of a playback-state poll, including the rate-limit signal so the
+    /// caller can back off instead of hammering the API into a longer 429.
+    enum PlaybackPoll: Sendable {
+        case state(PlaybackState)
+        case idle                       // 204/202 or nothing playing
+        case rateLimited(TimeInterval)  // 429 — wait this long before retrying
+        case failed
+    }
+
+    static func pollPlayback(token: String) async -> PlaybackPoll {
+        guard let url = URL(string: "\(base)/me/player") else { return .failed }
+        do {
+            let (data, resp) = try await HTTPClient.send(url, headers: bearer(token))
+            switch resp.statusCode {
+            case 204, 202:
+                return .idle
+            case 429:
+                let retry = RetryAfter.seconds(resp.value(forHTTPHeaderField: "Retry-After")) ?? 5
+                return .rateLimited(retry)
+            case 200..<300:
+                if let state = try? JSONDecoder().decode(PlaybackState.self, from: data) {
+                    return .state(state)
+                }
+                return .idle
+            default:
+                return .failed
+            }
+        } catch {
+            return .failed
+        }
+    }
+
+    static func discoverDevices(token: String) async -> SpotifyDeviceDiscovery {
+        guard let url = URL(string: "\(base)/me/player/devices") else { return .failed }
+        do {
+            let (data, response) = try await HTTPClient.send(url, headers: bearer(token))
+            switch response.statusCode {
+            case 200..<300:
+                guard let response = try? JSONDecoder().decode(DevicesResponse.self, from: data)
+                else { return .failed }
+                let returned = response.devices ?? []
+                let devices = returned
+                .filter { $0.id?.isEmpty == false && $0.isRestricted != true }
+                .sorted {
+                    if $0.isActive != $1.isActive { return $0.isActive }
+                    return ($0.name ?? "").localizedCaseInsensitiveCompare($1.name ?? "") == .orderedAscending
+                }
+                if !devices.isEmpty { return .available(devices) }
+                return returned.isEmpty ? .none : .unavailable
+            case 401:
+                return .unauthorized
+            case 403:
+                return .forbidden
+            case 429:
+                let retry = RetryAfter.seconds(response.value(forHTTPHeaderField: "Retry-After")) ?? 5
+                return .rateLimited(retry)
+            default:
+                return .failed
+            }
+        } catch {
+            return .failed
+        }
+    }
+
+    /// Transfers playback to a device. A 404 is a real failure: treating it as a
+    /// success made the picker checkmark a device that never received playback.
+    @discardableResult
+    static func transferPlayback(token: String, deviceId: String, play: Bool) async -> Bool {
+        do {
+            try await transferPlaybackChecked(token: token, deviceId: deviceId, play: play)
+            return true
+        } catch { return false }
+    }
+
+    private static func transferPlaybackChecked(token: String, deviceId: String, play: Bool) async throws {
+        let url = URL(string: "\(base)/me/player")!
+        let body = try JSONSerialization.data(withJSONObject: ["device_ids": [deviceId], "play": play])
+        let (data, response) = try await HTTPClient.send(url, method: "PUT",
+            headers: bearer(token).merging(["Content-Type": "application/json"]) { _, new in new }, body: body)
+        try validateTransferResponse(status: response.statusCode, data: data)
+    }
+
+    /// Preserve the refusal type so a stale or restricted Connect device can
+    /// recover through App Remote instead of stopping at a generic error.
+    static func validateTransferResponse(status: Int, data: Data) throws {
+        switch status {
+        case 200..<300: return
+        case 404: throw NoActiveDeviceError()
+        case 403: throw SpotifyPlaybackRestrictedError(message: parsePlayError(status: status, data: data))
+        default: throw ProviderError(parsePlayError(status: status, data: data))
+        }
+    }
+
+    /// Start/resume playback. Retries and, on 404/502 (no active device), picks a
+    /// device, transfers to it, and retries. Throws `NoActiveDeviceError` when no
+    /// Connect device exists, or a user-facing `ProviderError` on other failures.
+    @discardableResult
+    static func play(
+        token: String,
+        uris: [String]? = nil,
+        contextUri: String? = nil,
+        deviceId: String? = nil,
+        positionMs: Int? = nil
+    ) async throws -> String? {
+        var body: [String: Any] = [:]
+        if let uris { body["uris"] = uris }
+        if let contextUri { body["context_uri"] = contextUri }
+        if let positionMs { body["position_ms"] = max(0, positionMs) }
+        let bodyData = body.isEmpty ? nil : try? JSONSerialization.data(withJSONObject: body)
+
+        var device = deviceId
+        for attempt in 0..<4 {
+            try Task.checkCancellation()
+            let query = device.map { "?device_id=\($0)" } ?? ""
+            guard let url = URL(string: "\(base)/me/player/play\(query)") else {
+                throw ProviderError("Invalid Spotify playback URL.")
+            }
+            let (data, resp): (Data, HTTPURLResponse)
+            do {
+                (data, resp) = try await HTTPClient.send(
+                    url,
+                    method: "PUT",
+                    headers: bearer(token).merging(["Content-Type": "application/json"]) { _, new in new },
+                    body: bodyData
+                )
+            } catch {
+                try Task.checkCancellation()
+                throw ProviderError("Couldn't reach Spotify playback.")
+            }
+
+            if (200..<300).contains(resp.statusCode) || resp.statusCode == 204 { return device }
+
+            if (resp.statusCode == 404 || resp.statusCode == 502), attempt < 3 {
+                if device == nil {
+                    switch await discoverDevices(token: token) {
+                    case .available(let devices):
+                        device = devices.first(where: { $0.isActive })?.id
+                            ?? devices.first?.id
+                    case .none:
+                        throw NoActiveDeviceError()
+                    case .unavailable:
+                        throw SpotifyPlaybackRestrictedError(
+                            message: "Spotify found devices, but none can accept Connect playback."
+                        )
+                    case .unauthorized:
+                        throw ProviderError("Session expired. Reconnect Spotify.")
+                    case .forbidden:
+                        throw SpotifyPlaybackRestrictedError(
+                            message: "Spotify did not permit Connect control for this account."
+                        )
+                    case .rateLimited:
+                        throw ProviderError(
+                            "Spotify is checking devices too often. Try again in a moment."
+                        )
+                    case .failed:
+                        throw ProviderError(
+                            "Couldn't check Spotify devices. Check your connection and try again."
+                        )
+                    }
+                }
+                if let device {
+                    try await transferPlaybackChecked(
+                        token: token,
+                        deviceId: device,
+                        play: false
+                    )
+                }
+                try await Task.sleep(nanoseconds: UInt64(700_000_000 * (attempt + 1)))
+                continue
+            }
+
+            if resp.statusCode == 404 { throw NoActiveDeviceError() }
+            let message = parsePlayError(status: resp.statusCode, data: data)
+            if resp.statusCode == 403 {
+                var detail = message
+                if case .state(let state) = await pollPlayback(token: token),
+                   let disallowed = state.actions?.disallowedActions, !disallowed.isEmpty {
+                    detail += " Spotify reports as not allowed right now: \(disallowed.joined(separator: ", "))."
+                }
+                throw SpotifyPlaybackRestrictedError(message: detail)
+            }
+            throw ProviderError(message)
+        }
+        // Exhausted retries without ever landing a device.
+        throw NoActiveDeviceError()
+    }
+
+    // MARK: - Internals
+
+    private static func bearer(_ token: String) -> [String: String] {
+        ["Authorization": "Bearer \(token)"]
+    }
+
+    private static func getJSON<T: Decodable>(
+        _ path: String, token: String, allowReauth: Bool = true
+    ) async throws -> T {
+        if let remaining = await SpotifyReadBackoff.shared.remaining() {
+            throw SpotifyReadBackoff.Limited(retryAfter: remaining)
+        }
+        guard let url = URL(string: "\(base)\(path)") else {
+            throw ProviderError("Invalid Spotify URL: \(path)")
+        }
+        // Reads share a cooldown; do not retry every playlist independently.
+        // Playback commands are not gated by this metadata-read cooldown.
+        let (data, resp) = try await HTTPClient.send(url, headers: bearer(token), retryRateLimits: false)
+        if resp.statusCode == 429 {
+            let delay = await SpotifyReadBackoff.shared.record(resp.value(forHTTPHeaderField: "Retry-After"))
+            spotifyLog.error("GET \(path, privacy: .public) -> 429; reads paused for \(Int(delay), privacy: .public)s")
+            MainThreadStallMonitor.note("spotify rate limited (\(Int(delay)) s)")
+            throw SpotifyReadBackoff.Limited(retryAfter: delay)
+        }
+        guard (200..<300).contains(resp.statusCode) else {
+            let detail = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])
+                .flatMap { ($0["error"] as? [String: Any])?["message"] as? String }
+            spotifyLog.error("GET \(path, privacy: .public) -> \(resp.statusCode, privacy: .public) \(detail ?? "", privacy: .public)")
+            await SpotifyReadBackoff.shared.noteFailure("\(resp.statusCode)\(detail.map { ": \($0)" } ?? "")")
+            if resp.statusCode == 401 {
+                // Spotify can retire an access token before its stated expiry
+                // (revoked grant, password change). Refresh once, then give up.
+                if allowReauth {
+                    SpotifyAuth.invalidateAccessToken()
+                    if let fresh = await SpotifyAuth.getValidAccessToken(), fresh != token {
+                        return try await getJSON(path, token: fresh, allowReauth: false)
+                    }
+                }
+                if path.hasPrefix("/playlists/"), path.contains("/items?") {
+                    throw SpotifyPlaylistHTTPError(status: 401)
+                }
+                throw ProviderError("Session expired. Please sign in again.")
+            }
+            if path.hasPrefix("/playlists/"), path.contains("/items?") {
+                throw SpotifyPlaylistHTTPError(status: resp.statusCode)
+            }
+            if let detail { throw ProviderError("Spotify: \(detail)") }
+            throw ProviderError("Spotify API \(resp.statusCode)")
+        }
+        return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    /// Spotify's player endpoints answer 403 for several different reasons
+    /// (no Premium, a restriction on the current device or track, an account
+    /// not registered with the developer app). Report the reason Spotify gave;
+    /// a bare "Premium required" for every 403 sends a Premium user chasing the
+    /// wrong problem.
+    static func playbackFailureMessage(status: Int, data: Data) -> String {
+        let error = ((try? JSONSerialization.jsonObject(with: data)) as? [String: Any])?["error"] as? [String: Any]
+        let message = error?["message"] as? String
+        let reason = (error?["reason"] as? String)?.uppercased()
+        if status >= 400 {
+            spotifyLog.error("playback command -> \(status, privacy: .public) \(reason ?? "", privacy: .public) \(message ?? "", privacy: .public)")
+        }
+        switch status {
+        case 403:
+            if reason == "PREMIUM_REQUIRED" || message?.localizedCaseInsensitiveContains("premium") == true {
+                return "Spotify says this account doesn’t have Premium, which Spotify requires for playback control."
+            }
+            if reason == "RESTRICTION_VIOLATED" || message?.localizedCaseInsensitiveContains("restriction") == true {
+                return "Spotify didn’t allow that on the current device (restriction violated). Start a song in the Spotify app, then try again."
+            }
+            if let message { return "Spotify refused playback: \(message)" }
+            return "Spotify refused playback control (403)."
+        case 401: return "Session expired. Reconnect Spotify."
+        case 404: return "No active Spotify device. Start playing on a device, then try again."
+        default:
+            if let message { return message }
+            return "Playback error (\(status))"
+        }
+    }
+
+    private static func parsePlayError(status: Int, data: Data) -> String {
+        playbackFailureMessage(status: status, data: data)
+    }
+}
+
+actor SpotifyReadBackoff {
+    static let shared = SpotifyReadBackoff(persisting: true)
+    struct Limited: LocalizedError {
+        let retryAfter: TimeInterval
+        var errorDescription: String? { "Spotify is limiting requests. Showing your saved library." }
+    }
+    /// Spotify's Retry-After is a promise about this app, not this process. A
+    /// relaunch must not start a fresh burst that re-trips the limiter, so the
+    /// shared gate remembers the cooldown; tests use an unpersisted instance.
+    static let storeKey = "heartable.spotify.readCooldownUntil"
+    private var resumeAt: Date?
+    private let store: UserDefaults?
+
+    init(persisting: Bool = false, suiteName: String? = nil) {
+        // The defaults object is created here so it never crosses an isolation
+        // boundary; a suite name lets tests persist without touching .standard.
+        store = persisting ? (suiteName.flatMap { UserDefaults(suiteName: $0) } ?? .standard) : nil
+        if let epoch = store?.object(forKey: Self.storeKey) as? Double, epoch.isFinite {
+            resumeAt = Date(timeIntervalSince1970: epoch)
+        }
+    }
+
+    func remaining(now: Date = Date()) -> TimeInterval? {
+        guard let resumeAt = resumeAt.flatMap({ Self.sane($0, now: now) }), resumeAt > now else { return nil }
+        return resumeAt.timeIntervalSince(now)
+    }
+
+    /// When Spotify will accept reads again, if a cooldown is active.
+    func resumeDate(now: Date = Date()) -> Date? {
+        guard let resumeAt = resumeAt.flatMap({ Self.sane($0, now: now) }), resumeAt > now else { return nil }
+        return resumeAt
+    }
+
+    /// An explicit reconnect is the user's consent to try again now.
+    func clear() {
+        resumeAt = nil
+        lastFailure = nil
+        store?.removeObject(forKey: Self.storeKey)
+    }
+
+    /// The most recent non-2xx metadata read, as "status: Spotify's message",
+    /// so the Library can name the actual refusal instead of a generic outage.
+    private(set) var lastFailure: String?
+
+    func noteFailure(_ description: String) {
+        lastFailure = description
+    }
+
+    @discardableResult
+    func record(_ header: String?, now: Date = Date()) -> TimeInterval {
+        // Finite and at most a day: the value is persisted and later converted
+        // with Int(...), so an absurd header must not trap on every launch.
+        let delay = max(1, RetryAfter.seconds(header, now: now) ?? 30)
+        let current = resumeAt.flatMap { Self.sane($0, now: now) } ?? now
+        let resume = max(current, now.addingTimeInterval(delay))
+        resumeAt = resume
+        store?.set(resume.timeIntervalSince1970, forKey: Self.storeKey)
+        return resume.timeIntervalSince(now)
+    }
+
+    /// A stored cooldown from an older build may be unbounded or corrupt; one
+    /// further away than the longest honored Retry-After is ignored.
+    private static func sane(_ date: Date, now: Date) -> Date? {
+        let interval = date.timeIntervalSince(now)
+        guard interval.isFinite, interval <= RetryAfter.maximum else { return nil }
+        return date
+    }
+}
+
+// MARK: - Decodable payloads
+
+struct SpotifyUser: Decodable, Sendable {
+    let id: String
+    let displayName: String?
+    let email: String?
+    let product: String?
+    var images: [SpotifyImage]? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case id, email, product, images
+        case displayName = "display_name"
+    }
+}
+
+struct SpotifyImage: Decodable, Sendable {
+    let url: String?
+}
+
+struct SpotifyArtist: Decodable, Sendable {
+    let id: String?
+    let name: String?
+}
+
+/// Full artist object from `/artists` (unlike the simplified `SpotifyArtist` on
+/// tracks, this carries `images`). Used only to enrich artist art.
+private struct ArtistsResponse: Decodable { let artists: [FullArtist]? }
+private struct FullArtist: Decodable {
+    let id: String?
+    let name: String?
+    let images: [SpotifyImage]?
+}
+
+struct SpotifyAlbum: Decodable, Sendable {
+    let name: String?
+    let images: [SpotifyImage]?
+}
+
+struct SpotifyTrack: Decodable, Sendable {
+    let id: String
+    let uri: String
+    let name: String
+    let artists: [SpotifyArtist]?
+    let album: SpotifyAlbum?
+    let durationMs: Int?
+    let isLocal: Bool
+    let isPlayable: Bool?
+    let restrictionReason: String?
+
+    private struct Restrictions: Decodable { let reason: String? }
+    private enum CodingKeys: String, CodingKey {
+        case id, uri, name, artists, album
+        case durationMs = "duration_ms"
+        case isLocal = "is_local"
+        case isPlayable = "is_playable"
+        case restrictions
+    }
+
+    // Tolerate missing ids/uris (some episode/local rows omit them) so a partial
+    // payload doesn't fail the whole page decode.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(String.self, forKey: .id)) ?? ""
+        uri = (try? c.decode(String.self, forKey: .uri)) ?? ""
+        name = (try? c.decode(String.self, forKey: .name)) ?? "Unknown"
+        artists = try? c.decode([SpotifyArtist].self, forKey: .artists)
+        album = try? c.decode(SpotifyAlbum.self, forKey: .album)
+        durationMs = try? c.decode(Int.self, forKey: .durationMs)
+        isLocal = (try? c.decode(Bool.self, forKey: .isLocal)) ?? uri.hasPrefix("spotify:local:")
+        isPlayable = try? c.decode(Bool.self, forKey: .isPlayable)
+        restrictionReason = (try? c.decode(Restrictions.self, forKey: .restrictions))?.reason
+    }
+}
+
+struct SpotifyOwner: Decodable, Sendable {
+    let displayName: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case displayName = "display_name"
+    }
+}
+
+struct SpotifyTrackCount: Decodable, Sendable {
+    let total: Int?
+}
+
+struct SpotifyPlaylist: Decodable, Sendable {
+    let id: String
+    let name: String
+    let description: String?
+    let images: [SpotifyImage]?
+    let tracks: SpotifyTrackCount?
+    let owner: SpotifyOwner?
+    let snapshotID: String?
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(String.self, forKey: .id)) ?? ""
+        name = (try? c.decode(String.self, forKey: .name)) ?? ""
+        description = try? c.decode(String.self, forKey: .description)
+        images = try? c.decode([SpotifyImage].self, forKey: .images)
+        tracks = (try? c.decode(SpotifyTrackCount.self, forKey: .items))
+            ?? (try? c.decode(SpotifyTrackCount.self, forKey: .tracks))
+        owner = try? c.decode(SpotifyOwner.self, forKey: .owner)
+        snapshotID = try? c.decode(String.self, forKey: .snapshotID)
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, description, images, tracks, items, owner
+        case snapshotID = "snapshot_id"
+    }
+}
+
+struct SpotifyDevice: Decodable, Sendable {
+    let id: String?
+    let isActive: Bool
+    let isRestricted: Bool?
+    let name: String?
+    let type: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, type
+        case isActive = "is_active"
+        case isRestricted = "is_restricted"
+    }
+}
+
+/// The `actions.disallows` map Spotify attaches to a player state: the
+/// commands the current device or context will refuse.
+struct PlaybackActions: Decodable, Sendable {
+    let disallows: [String: Bool]?
+
+    var disallowedActions: [String] {
+        (disallows ?? [:]).filter { $0.value }.keys.sorted()
+    }
+}
+
+struct PlaybackState: Decodable, Sendable {
+    let isPlaying: Bool?
+    let progressMs: Int?
+    let device: SpotifyDevice?
+    let item: SpotifyTrack?
+    let shuffleState: Bool?
+    let repeatState: String?
+    let actions: PlaybackActions?
+
+    private enum CodingKeys: String, CodingKey {
+        case device, item, actions
+        case isPlaying = "is_playing"
+        case progressMs = "progress_ms"
+        case shuffleState = "shuffle_state"
+        case repeatState = "repeat_state"
+    }
+}
+
+private struct DevicesResponse: Decodable {
+    let devices: [SpotifyDevice]?
+}
+
+private struct SearchResult: Decodable {
+    let tracks: Paged<SpotifyTrack>?
+}
+
+struct SavedTrack: Decodable, Sendable {
+    let track: SpotifyTrack?
+}
+
+/// A row from `/playlists/{id}/items` (or the legacy `/tracks`). The playable is
+/// at `item` on the `/items` endpoint and at `track` on the old one — decode
+/// whichever is present so either response shape yields a `track`.
+struct PlaylistTrackItem: Decodable, Sendable {
+    let track: SpotifyTrack?
+
+    private enum CodingKeys: String, CodingKey { case item, track }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        track = try c.decodeIfPresent(SpotifyTrack.self, forKey: .item)
+            ?? c.decodeIfPresent(SpotifyTrack.self, forKey: .track)
+    }
+}
+
+struct Paged<T: Decodable>: Decodable {
+    let items: [T]?
+    let next: String?
+    /// Cursor movement counts the source slots, including deleted/malformed rows.
+    let rawItemCount: Int
+
+    private enum CodingKeys: String, CodingKey { case items, next }
+
+    /// Spotify emits `null` rows for playlists and tracks it can no longer
+    /// resolve. One such row must skip itself, not fail the whole page.
+    private struct LenientRow: Decodable {
+        let value: T?
+        init(from decoder: Decoder) throws { value = try? T(from: decoder) }
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        // Missing/null items is not proof that the user's library is empty.
+        let rows = try container.decode([LenientRow].self, forKey: .items)
+        rawItemCount = rows.count
+        items = rows.compactMap(\.value)
+        next = try container.decodeIfPresent(String.self, forKey: .next)
+    }
+}
+
+extension Paged: Sendable where T: Sendable {}

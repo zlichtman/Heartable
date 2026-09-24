@@ -1,0 +1,120 @@
+import SwiftUI
+
+/// Standard track row: artwork, title/artist, a provider brand dot, optional
+/// rank. Tapping starts playback.
+struct UnifiedTrackRow: View {
+    @Environment(ThemeStore.self) private var theme
+    @AppStorage(SongListStyle.storageKey) private var listStyle: SongListStyle = .classic
+    let track: UnifiedTrack
+    var rank: Int? = nil
+    var statText: String? = nil
+    var isEnabled = true
+    var enclosed = false
+    var onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            if listStyle == .covers {
+                VStack(alignment: .leading, spacing: 8) {
+                    GeometryReader { geometry in
+                        CoverArt(url: track.albumArt, size: min(140, geometry.size.width), corner: 16)
+                            .frame(maxWidth: .infinity)
+                    }.frame(height: 140)
+                    Text(track.name).font(Typography.semibold(15))
+                        .foregroundStyle(theme.palette.text).lineLimit(2)
+                        .frame(height: 38, alignment: .topLeading)
+                    Text(track.artistNames).font(Typography.body(12))
+                        .foregroundStyle(theme.palette.textSecondary).lineLimit(1)
+                    HStack {
+                        ProviderBadge(id: track.providerID, size: 16)
+                        if let rank { Text("\(rank)").font(Typography.body(11)).foregroundStyle(theme.palette.textMuted) }
+                        if let statText { Text(statText).font(Typography.body(11)).foregroundStyle(theme.palette.textMuted) }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+            } else if listStyle == .linerNotes {
+                HStack(alignment: .firstTextBaseline, spacing: 14) {
+                    if let rank {
+                        Text(String(format: "%02d", rank)).font(Typography.body(12)).monospacedDigit()
+                            .foregroundStyle(theme.palette.rose).frame(width: 26)
+                    }
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(track.name).font(Typography.heading(23)).foregroundStyle(theme.palette.text).lineLimit(2)
+                        Text(track.artistNames).font(Typography.body(13)).foregroundStyle(theme.palette.textSecondary).lineLimit(1)
+                        HStack(spacing: 6) {
+                            ProviderBadge(id: track.providerID, size: 14)
+                            Text(statText ?? track.album ?? "").font(Typography.body(11)).foregroundStyle(theme.palette.textMuted).lineLimit(1)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 8).frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            } else {
+            HStack(spacing: 12) {
+                if let rank {
+                    Text("\(rank)")
+                        .font(Typography.semibold(13))
+                        .foregroundStyle(theme.palette.textMuted)
+                        .frame(width: 22, alignment: .center)
+                }
+                artwork
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(track.name).font(Typography.semibold(15))
+                        .foregroundStyle(theme.palette.text).lineLimit(listStyle == .blocks ? 2 : 1)
+                    HStack(spacing: 5) {
+                        ProviderBadge(id: track.providerID, size: 16)
+                        Text(track.artistNames).font(Typography.body(12))
+                            .foregroundStyle(theme.palette.textSecondary).lineLimit(1)
+                    }
+                    if let reason = track.playbackUnavailableReason {
+                        Text(reason).font(Typography.body(11))
+                            .foregroundStyle(theme.palette.textMuted).lineLimit(1)
+                    }
+                    if listStyle == .blocks, let statText {
+                        Text(statText)
+                            .font(Typography.semibold(11))
+                            .foregroundStyle(theme.palette.textMuted)
+                            .lineLimit(1)
+                    }
+                }
+                Spacer(minLength: 4)
+                if let statText, listStyle != .blocks {
+                    Text(statText)
+                        .font(Typography.semibold(12))
+                        .foregroundStyle(theme.palette.textMuted)
+                        .lineLimit(1)
+                }
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(!isEnabled)
+        .opacity(isEnabled ? 1 : 0.62)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(track.name)
+        .accessibilityValue(
+            [track.artistNames, providerLabel, statText]
+                .compactMap { $0 }
+                .joined(separator: ", ")
+        )
+        .accessibilityHint(
+            isEnabled
+                ? "Plays track"
+                : "Connect this music service to play"
+        )
+        .modifier(SongListRowSurface(style: listStyle, enclosed: enclosed))
+    }
+
+    private var providerLabel: String {
+        ProviderCatalog.entry(track.providerID)?.label ?? track.providerID.rawValue
+    }
+
+    private var artwork: some View {
+        CoverArt(url: track.albumArt, size: listStyle.artworkSize)
+    }
+}

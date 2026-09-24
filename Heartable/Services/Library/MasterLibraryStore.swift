@@ -1,0 +1,447 @@
+import Foundation
+import Observation
+
+/// Owns the unified master library and the single federated search.
+///
+/// - LIBRARY: projects LibraryStore's reconciled source tracks into de-duplicated
+///   `[MasterTrack]` / `[MasterArtist]` values with cross-service provenance and
+///   persists a `MasterLibrarySnapshot` for cached startup.
+/// - SEARCH: `setSearch(_:localPlaylists:)` runs one debounced, cancellable query
+///   across all connected providers concurrently, isolates per-provider failure
+///   and slowness (soft timeout), merges + de-dupes + ranks, and applies the
+///   result ATOMICALLY (one assignment) so the list never flickers or reflows as
+///   individual services return.
+@MainActor
+@Observable
+final class MasterLibraryStore {
+
+    // MARK: - Library state
+
+    private(set) var tracks: [MasterTrack] = []
+    private(set) var artists: [MasterArtist] = []
+    private(set) var loading = false
+    private(set) var lastLoadedAt: Date?
+
+    // MARK: - Search state
+
+    struct SearchResults: Sendable {
+        var tracks: [MasterTrack] = []
+        var artists: [MasterArtist] = []
+        var playlists: [UnifiedPlaylist] = []
+        var people: [FoundProfileDTO] = []
+        var isEmpty: Bool {
+            tracks.isEmpty && artists.isEmpty && playlists.isEmpty && people.isEmpty
+        }
+    }
+
+    private(set) var searchTerm = ""
+    var searchScope = LibrarySearchScope()
+    private(set) var searching = false
+    private(set) var searchResults = SearchResults()
+    /// True after a search completed with zero connected providers (drives the
+    /// "connect a service" hint without swapping the whole view).
+    private(set) var searchedWithNoProviders = false
+
+    // MARK: - Internals
+
+    private var didHydrate = false
+    private var hydratedOwnerID: UUID?
+    private var lifecycleID = UUID()
+    private var searchTask: Task<Void, Never>?
+
+    /// Debounce window before a new query hits the network.
+    private let debounce: Duration = .milliseconds(300)
+    /// Per-provider soft cap so one slow service can't stall the whole search.
+    private let providerSearchTimeout: TimeInterval = 6
+
+    // MARK: - Hydrate
+
+    /// Load the persisted snapshot once per session (decoded off the main actor).
+    func hydrate() async {
+        guard let ownerID = AccountSessionStore.currentOwnerID else { return }
+        guard !didHydrate || hydratedOwnerID != ownerID else { return }
+        didHydrate = true
+        hydratedOwnerID = ownerID
+        let requestID = lifecycleID
+        let snapshot = await MasterLibrarySnapshot.load(ownerID: ownerID)
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID,
+              let snapshot,
+              tracks.isEmpty else { return }
+        let hydratedArtists = if snapshot.artists.isEmpty {
+            await Task.detached(priority: .userInitiated) {
+                MasterArtist.aggregate(snapshot.tracks)
+            }.value
+        } else {
+            snapshot.artists
+        }
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
+        tracks = snapshot.tracks
+        artists = hydratedArtists
+        lastLoadedAt = snapshot.savedAt
+    }
+
+    // MARK: - Load / refresh
+
+    /// Consume the source tracks already fetched by `LibraryStore`. Library browse
+    /// and the master/search index used to independently fan out top + liked calls
+    /// to every provider; this makes the browse pipeline authoritative and keeps
+    /// the master projection as a cheap in-memory reconciliation.
+    func adopt(_ sourceTracks: [UnifiedTrack], providerIDs _: Set<ProviderID>) async {
+        guard let ownerID = AccountSessionStore.currentOwnerID else { return }
+        let requestID = lifecycleID
+        await hydrate()
+        guard lifecycleID == requestID,
+              hydratedOwnerID == ownerID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
+        let projection = await Task.detached(priority: .userInitiated) {
+            Self.project(sourceTracks)
+        }.value
+        guard lifecycleID == requestID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
+        tracks = projection.tracks
+        artists = projection.artists
+        lastLoadedAt = Date()
+        persist()
+    }
+
+    // MARK: - Reconcile
+
+    /// The browse pipeline has already reconciled provider failures and empty
+    /// successes. This projection must never apply a second fallback policy.
+    private struct LibraryProjection: Sendable {
+        let tracks: [MasterTrack]
+        let artists: [MasterArtist]
+    }
+
+    private nonisolated static func project(_ fetched: [UnifiedTrack]) -> LibraryProjection {
+        var dict: [String: MasterTrack] = [:]
+        for source in fetched { MasterTrack.insert(source, into: &dict) }
+        let merged = Array(dict.values)
+        return LibraryProjection(tracks: merged, artists: MasterArtist.aggregate(merged))
+    }
+
+    private func persist() {
+        guard let ownerID = hydratedOwnerID,
+              AccountSessionStore.currentOwnerID == ownerID else { return }
+        let snapshot = MasterLibrarySnapshot(tracks: tracks, artists: artists)
+        Task(priority: .utility) { await snapshot.save(ownerID: ownerID) }
+    }
+
+    // MARK: - Federated search
+
+    /// Debounced, cancellable entry point. Cancels any in-flight query, waits out
+    /// the debounce, then runs the federated search. The View calls this on every
+    /// keystroke; only the latest term's results ever render.
+    func setSearch(
+        _ term: String,
+        localPlaylists: [UnifiedPlaylist]
+    ) {
+        searchTerm = term
+        searchTask?.cancel()
+
+        let query = term.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+            searching = false
+            searchedWithNoProviders = false
+            searchResults = SearchResults()
+            return
+        }
+
+        // First paint is local. A small index ranks synchronously so typing never
+        // shows a blank spinner; a large one ranks off the main actor, because
+        // filtering and sorting tens of thousands of tracks per keystroke on the
+        // main thread is a multi-second freeze.
+        let localTracks = tracks
+        let inline = localTracks.count <= Self.inlineSearchLimit
+        if inline {
+            searchResults = Self.localResults(query: query, tracks: localTracks, playlists: localPlaylists)
+        }
+        searching = true
+        let scope = searchScope
+        searchTask = Task { [weak self] in
+            guard let self else { return }
+            if !inline {
+                let local = await Task.detached(priority: .userInitiated) {
+                    Self.localResults(query: query, tracks: localTracks, playlists: localPlaylists)
+                }.value
+                if Task.isCancelled { return }
+                self.searchResults = local
+            }
+            try? await Task.sleep(for: self.debounce)
+            if Task.isCancelled { return }
+            await self.runSearch(
+                query,
+                localPlaylists: localPlaylists,
+                scope: scope
+            )
+        }
+    }
+
+    /// Run one query end-to-end and apply the result atomically. Stale checks
+    /// (`Task.isCancelled`) guarantee an older query never overwrites a newer one.
+    private func runSearch(
+        _ query: String,
+        localPlaylists: [UnifiedPlaylist],
+        scope: LibrarySearchScope
+    ) async {
+        let connectedProviders = await ProviderRegistry.searchable()
+        let selectedIDs = scope.resolved(connected: Set(connectedProviders.map(\.id)))
+        let providers = connectedProviders.filter { selectedIDs.contains($0.id) }
+        if Task.isCancelled { return }
+
+        // Publish cached matches immediately. Network providers and profiles then
+        // refine the same stable result set without making local search wait.
+        let localMatches = tracks
+            .filter { Self.trackMatches($0, query: query) }
+            .flatMap(\.sources)
+            .filter { selectedIDs.contains($0.providerID) }
+        let localTracks = Self.rankTracks(MasterTrack.group(localMatches), query: query)
+        let matchingPlaylists = Self.rankPlaylists(
+            localPlaylists.filter { selectedIDs.contains($0.providerID) }, query: query
+        )
+        searchResults = SearchResults(
+            tracks: localTracks,
+            artists: Self.rankArtists(localTracks, query: query),
+            playlists: matchingPlaylists,
+            people: []
+        )
+        searchedWithNoProviders = providers.isEmpty
+
+        async let peopleFetch = Self.findPeople(query)
+        let found = await Self.gatherSearch(
+            providers,
+            query: query,
+            defaultTimeout: providerSearchTimeout
+        )
+        if Task.isCancelled { return }
+
+        // Merge federated hits into the local projection, de-dupe, and rank.
+        let merged = MasterTrack.group(found + localMatches)
+        let rankedTracks = Self.rankTracks(merged, query: query)
+        let rankedArtists = Self.rankArtists(merged, query: query)
+        let people = await peopleFetch
+        if Task.isCancelled { return }
+
+        searchResults = SearchResults(
+            tracks: rankedTracks,
+            artists: rankedArtists,
+            playlists: matchingPlaylists,
+            people: Self.rankPeople(people, query: query)
+        )
+        searchedWithNoProviders = providers.isEmpty
+        searching = false
+    }
+
+    // MARK: - Concurrency helpers (off-actor, Sendable)
+
+    /// Search every provider concurrently, each capped by a soft timeout so one
+    /// slow service is dropped rather than stalling the merge. Provider adapters
+    /// already return `[]` on failure, so failures are isolated too.
+    private nonisolated static func gatherSearch(
+        _ providers: [MusicProvider],
+        query: String,
+        defaultTimeout: TimeInterval
+    ) async -> [UnifiedTrack] {
+        await withTaskGroup(of: [UnifiedTrack].self) { group in
+            for provider in providers {
+                // MusicKit may need to wake its catalog session after launch.
+                // Give Apple a wider first-search window instead of silently
+                // presenting an empty provider-filtered result after six seconds.
+                let timeout = provider.id == .apple ? 15 : defaultTimeout
+                group.addTask { await timedSearch(provider, query, timeout) }
+            }
+            var all: [UnifiedTrack] = []
+            for await chunk in group { all.append(contentsOf: chunk) }
+            return all
+        }
+    }
+
+    /// Race a provider search against a timeout; the loser is cancelled.
+    private nonisolated static func timedSearch(
+        _ provider: MusicProvider,
+        _ query: String,
+        _ timeout: TimeInterval
+    ) async -> [UnifiedTrack] {
+        await withTaskGroup(of: [UnifiedTrack]?.self) { group in
+            group.addTask { await provider.search(query) }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(timeout))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first ?? []
+        }
+    }
+
+    private nonisolated static func findPeople(_ query: String) async -> [FoundProfileDTO] {
+        (try? await BackendAPI.shared.findProfiles(query: query)) ?? []
+    }
+
+    // MARK: - Ranking
+
+    /// Libraries up to this many songs rank inline on the main actor.
+    nonisolated static let inlineSearchLimit = 2_000
+
+    private nonisolated static func localResults(
+        query: String,
+        tracks: [MasterTrack],
+        playlists: [UnifiedPlaylist]
+    ) -> SearchResults {
+        let q = normalizedSearchText(query)
+        let matches = tracks.filter { trackMatches($0, normalizedQuery: q) }
+        let rankedTracks = rankTracks(matches, query: query)
+        return SearchResults(
+            tracks: rankedTracks,
+            artists: rankArtists(rankedTracks, query: query),
+            playlists: rankPlaylists(playlists, query: query),
+            people: []
+        )
+    }
+
+    /// Exact title match first, then title prefix, then artist prefix, then any
+    /// substring; ties broken by provenance breadth (more services = more
+    /// canonical) then title. Deterministic, so the applied list is stable.
+    private nonisolated static func rankTracks(
+        _ tracks: [MasterTrack],
+        query: String
+    ) -> [MasterTrack] {
+        let q = normalizedSearchText(query)
+        func score(_ track: MasterTrack) -> Int {
+            let title = normalizedSearchText(track.title)
+            let artist = normalizedSearchText(track.artistNames)
+            if title == q { return 0 }
+            if title.hasPrefix(q) { return 1 }
+            if artist == q { return 2 }
+            if artist.hasPrefix(q) { return 3 }
+            if title.contains(q) { return 4 }
+            return 5
+        }
+        // Score each track once; the comparator form normalized both titles
+        // and both artists again on every comparison.
+        let scored = tracks.map { (track: $0, score: score($0)) }
+        return scored.sorted { a, b in
+            if a.score != b.score { return a.score < b.score }
+            if a.track.providers.count != b.track.providers.count { return a.track.providers.count > b.track.providers.count }
+            return a.track.title.localizedCaseInsensitiveCompare(b.track.title) == .orderedAscending
+        }.map(\.track)
+    }
+
+    nonisolated static func rankArtists(
+        _ tracks: [MasterTrack],
+        query: String
+    ) -> [MasterArtist] {
+        let q = normalizedSearchText(query)
+        func score(_ artist: MasterArtist) -> Int {
+            let name = normalizedSearchText(artist.name)
+            if name == q { return 0 }
+            if name.hasPrefix(q) { return 1 }
+            return 2
+        }
+        return MasterArtist.aggregate(tracks)
+            .filter { normalizedSearchText($0.name).contains(q) }
+            .sorted { lhs, rhs in
+                let leftScore = score(lhs)
+                let rightScore = score(rhs)
+                if leftScore != rightScore { return leftScore < rightScore }
+                if lhs.count != rhs.count { return lhs.count > rhs.count }
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+    }
+
+    private nonisolated static func rankPlaylists(
+        _ playlists: [UnifiedPlaylist],
+        query: String
+    ) -> [UnifiedPlaylist] {
+        let q = normalizedSearchText(query)
+        func score(_ playlist: UnifiedPlaylist) -> Int {
+            let name = normalizedSearchText(playlist.name)
+            if name == q { return 0 }
+            if name.hasPrefix(q) { return 1 }
+            return 2
+        }
+        return playlists
+            .filter { normalizedSearchText($0.name).contains(q) }
+            .sorted { lhs, rhs in
+                let leftScore = score(lhs)
+                let rightScore = score(rhs)
+                if leftScore != rightScore { return leftScore < rightScore }
+                if lhs.trackCount != rhs.trackCount {
+                    return lhs.trackCount > rhs.trackCount
+                }
+                return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+            }
+    }
+
+    private nonisolated static func rankPeople(
+        _ people: [FoundProfileDTO],
+        query: String
+    ) -> [FoundProfileDTO] {
+        let q = normalizedSearchText(query)
+        return people.sorted { lhs, rhs in
+            let left = normalizedSearchText(lhs.displayName ?? "")
+            let right = normalizedSearchText(rhs.displayName ?? "")
+            let leftScore = left == q ? 0 : (left.hasPrefix(q) ? 1 : 2)
+            let rightScore = right == q ? 0 : (right.hasPrefix(q) ? 1 : 2)
+            if leftScore != rightScore { return leftScore < rightScore }
+            return left.localizedStandardCompare(right) == .orderedAscending
+        }
+    }
+
+    private nonisolated static func trackMatches(
+        _ track: MasterTrack,
+        query: String
+    ) -> Bool {
+        trackMatches(track, normalizedQuery: normalizedSearchText(query))
+    }
+
+    private nonisolated static func trackMatches(
+        _ track: MasterTrack,
+        normalizedQuery q: String
+    ) -> Bool {
+        normalizedSearchText(track.title).contains(q)
+            || normalizedSearchText(track.artistNames).contains(q)
+    }
+
+    private nonisolated static func normalizedSearchText(_ value: String) -> String {
+        let folded = value.folding(
+            options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
+            locale: .current
+        )
+        return folded
+            .components(separatedBy: CharacterSet.alphanumerics.inverted)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
+
+    // MARK: - Reset
+
+    /// Replace rather than reconcile after explicit deletion, so stale cached
+    /// mixtape-only tracks cannot be merged back into search results.
+    func replaceAfterDataClear(_ sourceTracks: [UnifiedTrack]) async {
+        reset()
+        guard let ownerID = AccountSessionStore.currentOwnerID else { return }
+        didHydrate = true
+        hydratedOwnerID = ownerID
+        await adopt(sourceTracks, providerIDs: Set(sourceTracks.map(\.providerID)))
+    }
+
+    /// Forget everything (call on sign-out / account switch).
+    func reset() {
+        lifecycleID = UUID()
+        searchTask?.cancel()
+        searchTask = nil
+        tracks = []
+        artists = []
+        searchResults = SearchResults()
+        searchTerm = ""
+        searchScope = LibrarySearchScope()
+        searching = false
+        lastLoadedAt = nil
+        didHydrate = false
+        hydratedOwnerID = nil
+        searchedWithNoProviders = false
+    }
+}
