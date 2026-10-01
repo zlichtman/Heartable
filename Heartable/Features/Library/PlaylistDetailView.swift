@@ -31,11 +31,7 @@ struct PlaylistDetailView: View {
     @State private var sortReversed = false
     @State private var showingSortOptions = false
     @State private var rotationID = UUID()
-    #if DEBUG
-    @State private var coverSelection: Int? = ScreenshotFixtures.requested == "vinyl" ? ScreenshotFixtures.vinylFocus : 0
-    #else
     @State private var coverSelection: Int? = 0
-    #endif
     @State private var visibleLimit = 100
     @State private var sortedTracks: [UnifiedTrack]?
     @State private var sortedRevision = ""

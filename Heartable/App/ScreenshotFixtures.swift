@@ -64,9 +64,6 @@ enum ScreenshotFixtures {
         trackCount: 196, owner: nil, contentRevision: "fixture"
     )
 
-    /// The shelf opens on "Shine", where neighboring sleeves are all different records.
-    static let vinylFocus = 9
-
     static func vinylTracks() -> [UnifiedTrack] {
         exileTable.split(separator: "\n").map { line in
             let field = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
