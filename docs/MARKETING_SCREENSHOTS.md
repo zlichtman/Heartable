@@ -15,8 +15,12 @@ Launch arguments:
 -HeartableScreenshot mixtape -heartable_theme midnight
 ```
 
-The HeartableScreenshots scheme provides `testMixtapePortrait` and the existing
-vinyl shelf capture. Set `TEST_RUNNER_SCREENSHOT_DIR` to choose the PNG output
+The HeartableScreenshots scheme provides `testMixtapePortrait`,
+`testFriendProfilePortrait` (`-HeartableScreenshot friend`: a friend, Ava, whose
+rank, rotation and compatibility come from the view's own logic over a song
+board of the owner's real songs), and `testVinylShelfLandscape` (the owner's
+EXILE playlist as backed up, all 196 songs). Fixture songs come from the
+owner's library backups; never invent songs under a real playlist's name. Set `TEST_RUNNER_SCREENSHOT_DIR` to choose the PNG output
 directory when running it through xcodebuild. Simulator status-bar overrides
 can standardize the time and battery before capture.
 

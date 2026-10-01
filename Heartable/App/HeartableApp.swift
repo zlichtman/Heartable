@@ -94,6 +94,8 @@ struct HeartableApp: App {
             ScreenshotMixtapeView()
         } else if ScreenshotFixtures.requested == "vinyl" {
             ScreenshotVinylView()
+        } else if ScreenshotFixtures.requested == "friend" {
+            ScreenshotFriendView()
         } else {
             RootView()
         }

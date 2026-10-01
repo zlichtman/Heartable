@@ -99,6 +99,10 @@ struct MixtapeEditorView: View {
                                 Label("Remove cover", systemImage: "photo.badge.minus")
                             }.disabled(uploadingCover)
                         }
+                        Divider()
+                        Button(role: .destructive) { confirmingDelete = true } label: {
+                            Label("Delete mixtape", systemImage: "trash")
+                        }.disabled(uploadingCover || changingTracks)
                     } label: {
                         Image(systemName: "ellipsis").frame(width: 44, height: 44)
                     }
@@ -141,35 +145,29 @@ struct MixtapeEditorView: View {
                 header
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 8, trailing: 0))
+                    .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 20, trailing: 0))
             }
 
             Section {
-                ForEach(tracks) { t in trackRow(t) }
+                ForEach(Array(tracks.enumerated()), id: \.element.id) { index, t in trackRow(t, number: index + 1) }
                     .onDelete(perform: deleteTracks)
                     .onMove(perform: moveTracks)
 
                 if editable {
                     Button { showSearch = true } label: {
-                        Label("Add tracks", systemImage: "plus.circle")
+                        Label("Add songs", systemImage: "plus.circle")
                             .font(Typography.semibold(15))
                             .foregroundStyle(theme.palette.rose)
+                            .frame(minHeight: 44)
                     }
                     .listRowBackground(theme.palette.bg)
                 }
-            } header: {
-                Text("\(tracks.count) track\(tracks.count == 1 ? "" : "s")")
-                    .font(Typography.semibold(12))
-                    .foregroundStyle(theme.palette.textMuted)
-            }
-            if editable {
-                Section {
-                    Button(role: .destructive) { confirmingDelete = true } label: {
-                        Label("Delete mixtape", systemImage: "trash")
-                            .font(Typography.medium(15)).foregroundStyle(theme.palette.danger)
-                            .frame(minHeight: 44)
-                    }.disabled(uploadingCover || changingTracks)
-                        .listRowBackground(Color.clear)
+            } footer: {
+                if editable, !tracks.isEmpty, !tracks.contains(where: hasNote) {
+                    Text("Swipe right on a song to add a note or a photo.")
+                        .font(Typography.body(12))
+                        .foregroundStyle(theme.palette.textMuted)
+                        .padding(.top, 6)
                 }
             }
         }
@@ -178,41 +176,94 @@ struct MixtapeEditorView: View {
         .background(theme.palette.bg)
     }
 
+    /// "For Ava · Feb 14": who it's for and when it was given, the way a gift is labeled.
+    private var dedication: String? {
+        guard mixtape?.recipientId != nil else { return nil }
+        let name = editable ? (recipientName ?? "your friend") : "you"
+        guard let sent = mixtape?.sentAt.flatMap(Self.parseDate) else { return editable ? "For \(name) · Draft" : "For \(name)" }
+        return "For \(name) · \(sent.formatted(.dateTime.month(.abbreviated).day()))"
+    }
+
+    private static func parseDate(_ text: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter.date(from: text) ?? ISO8601DateFormatter().date(from: text)
+    }
+
+    private var runtime: String {
+        let minutes = tracks.reduce(0) { $0 + ($1.durationMs ?? 0) } / 60_000
+        let songs = "\(tracks.count) song\(tracks.count == 1 ? "" : "s")"
+        return minutes > 0 ? "\(songs) · \(minutes) min" : songs
+    }
+
+    /// Only a save that needs attention is shown; a saved mixtape says nothing.
+    private var saveStatus: String? {
+        if metadataFailed { return "Changes not saved" }
+        if savingMetadata { return "Saving…" }
+        return nil
+    }
+
     private var header: some View {
-        VStack(spacing: 12) {
-            if editable, mixtape?.recipientId != nil {
-                Text(mixtape?.sentAt == nil ? "For \(recipientName ?? "your friend") · Draft" : "Sent to \(recipientName ?? "your friend")")
-                    .font(Typography.medium(12)).foregroundStyle(theme.palette.textSecondary)
-            }
+        VStack(spacing: 20) {
             cover
-            if editable {
-                TextField("Mixtape title", text: $title)
-                    .font(Typography.heading(24))
-                    .foregroundStyle(theme.palette.text)
-                    .multilineTextAlignment(.center)
-                    .onSubmit { Task { _ = await saveMeta() } }
-                Text(metadataFailed ? "Changes not saved" : savingMetadata ? "Saving…" : metadataDirty ? "Unsaved changes" : "Saved")
-                    .font(Typography.medium(12))
-                    .foregroundStyle(metadataFailed ? theme.palette.danger : theme.palette.textMuted)
-                if metadataFailed {
-                    Button("Retry save") { Task { _ = await saveMeta() } }
-                        .foregroundStyle(theme.palette.rose).frame(minHeight: 44)
+            VStack(spacing: 10) {
+                if let dedication {
+                    Text(dedication.uppercased())
+                        .font(Typography.semibold(11))
+                        .tracking(1.6)
+                        .foregroundStyle(theme.palette.rose)
                 }
-                TextField("Add a description / dedication", text: $description, axis: .vertical)
-                    .font(Typography.body(14))
-                    .foregroundStyle(theme.palette.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .onSubmit { Task { _ = await saveMeta() } }
-            } else {
-                Text(title.isEmpty ? "Untitled mixtape" : title)
-                    .font(Typography.heading(24))
-                    .foregroundStyle(theme.palette.text)
-                    .multilineTextAlignment(.center)
-                if !description.isEmpty {
-                    Text(description)
-                        .font(Typography.body(14))
+                if editable {
+                    TextField("Mixtape title", text: $title)
+                        .font(Typography.heading(30))
+                        .foregroundStyle(theme.palette.text)
+                        .multilineTextAlignment(.center)
+                        .onSubmit { Task { _ = await saveMeta() } }
+                    TextField("Write them a dedication", text: $description, axis: .vertical)
+                        .font(Typography.body(15))
                         .foregroundStyle(theme.palette.textSecondary)
                         .multilineTextAlignment(.center)
+                        .onSubmit { Task { _ = await saveMeta() } }
+                } else {
+                    Text(title.isEmpty ? "Untitled mixtape" : title)
+                        .font(Typography.heading(30))
+                        .foregroundStyle(theme.palette.text)
+                        .multilineTextAlignment(.center)
+                    if !description.isEmpty {
+                        Text(description)
+                            .font(Typography.body(15))
+                            .foregroundStyle(theme.palette.textSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                if editable, let saveStatus {
+                    Text(saveStatus)
+                        .font(Typography.medium(12))
+                        .foregroundStyle(metadataFailed ? theme.palette.danger : theme.palette.textMuted)
+                    if metadataFailed {
+                        Button("Retry save") { Task { _ = await saveMeta() } }
+                            .foregroundStyle(theme.palette.rose).frame(minHeight: 44)
+                    }
+                }
+            }
+            .padding(.horizontal, 28)
+
+            if !tracks.isEmpty {
+                VStack(spacing: 10) {
+                    Button {
+                        Task { await player.play(tracks: tracks.map(unified), startingAt: nil, mode: prefs.mode) }
+                    } label: {
+                        Label("Play", systemImage: "play.fill")
+                            .font(Typography.semibold(15))
+                            .foregroundStyle(theme.palette.bg)
+                            .padding(.horizontal, 30)
+                            .frame(minHeight: 44)
+                            .background(theme.palette.rose, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    Text(runtime)
+                        .font(Typography.medium(12))
+                        .foregroundStyle(theme.palette.textMuted)
                 }
             }
         }
@@ -373,30 +424,57 @@ struct MixtapeEditorView: View {
     }
 
     @ViewBuilder
-    private func trackRow(_ t: MixtapeTrackDTO) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            UnifiedTrackRow(track: unified(t)) {
+    private func hasNote(_ t: MixtapeTrackDTO) -> Bool {
+        t.note?.isEmpty == false || t.noteImageUrl?.isEmpty == false
+    }
+
+    private func trackRow(_ t: MixtapeTrackDTO, number: Int) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            UnifiedTrackRow(track: unified(t), rank: number) {
                 Task { await player.play(tracks: tracks.map(unified),
                                          startingAt: tracks.firstIndex { $0.id == t.id },
                                          mode: prefs.mode) }
             }
-            if let note = t.note, !note.isEmpty {
-                Text(note).font(Typography.body(14)).foregroundStyle(theme.palette.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if let image = t.noteImageUrl, !image.isEmpty {
-                ArtworkThumb(urlString: image, size: 180, corner: 14)
-            }
-            if editable {
-                Button { noteTrack = t } label: {
-                    Label(t.note?.isEmpty == false || t.noteImageUrl?.isEmpty == false ? "Edit note & photo" : "Add note or photo",
-                          systemImage: "square.and.pencil")
-                        .font(Typography.medium(12)).foregroundStyle(theme.palette.rose).frame(minHeight: 44)
-                }.buttonStyle(.plain)
+            if hasNote(t) {
+                HStack(alignment: .top, spacing: 12) {
+                    Capsule().fill(theme.palette.rose).frame(width: 2)
+                    VStack(alignment: .leading, spacing: 10) {
+                        if let note = t.note, !note.isEmpty {
+                            Text(note)
+                                .font(Typography.body(15))
+                                .foregroundStyle(theme.palette.text)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if let image = t.noteImageUrl, !image.isEmpty {
+                            ArtworkThumb(urlString: image, size: 132, corner: 14)
+                        }
+                    }
+                }
+                .padding(.leading, 6)
+                .padding(.bottom, 4)
+                .contentShape(Rectangle())
+                .onTapGesture { if editable { noteTrack = t } }
+                .accessibilityElement(children: .combine)
+                .accessibilityHint(editable ? "Edit note" : "")
             }
         }
         .listRowBackground(theme.palette.bg)
         .listRowSeparatorTint(theme.palette.border)
+        .swipeActions(edge: .leading) {
+            if editable {
+                Button { noteTrack = t } label: {
+                    Label(hasNote(t) ? "Edit note" : "Add note", systemImage: "square.and.pencil")
+                }
+                .tint(theme.palette.rose)
+            }
+        }
+        .contextMenu {
+            if editable {
+                Button { noteTrack = t } label: {
+                    Label(hasNote(t) ? "Edit note or photo" : "Add note or photo", systemImage: "square.and.pencil")
+                }
+            }
+        }
     }
 
     private func deleteTracks(_ offsets: IndexSet) {
@@ -459,14 +537,14 @@ private struct MixtapeCoverPickerLabel: View {
     var body: some View {
         MixtapeCoverArtwork(urlString: urlString)
             .overlay(alignment: .bottomTrailing) {
-                Image(systemName: "camera.fill")
-                    .font(.system(size: 15, weight: .semibold))
+                Image(systemName: "photo")
+                    .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 36, height: 36)
-                    .background(theme.palette.rose)
-                    .clipShape(Circle())
-                    .overlay { Circle().stroke(theme.palette.bg, lineWidth: 2) }
-                    .padding(8)
+                    .frame(width: 34, height: 34)
+                    .background(.black.opacity(0.35), in: Circle())
+                    .background(.ultraThinMaterial, in: Circle())
+                    .padding(12)
+                    .accessibilityLabel("Change cover")
             }
             .overlay {
                 if isUploading {
@@ -492,8 +570,9 @@ private struct MixtapeCoverArtwork: View {
                 placeholder
             }
         }
-        .frame(width: 180, height: 180)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+        .frame(width: 264, height: 264)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg, style: .continuous))
+        .shadow(color: .black.opacity(0.28), radius: 24, y: 14)
     }
 
     private var demoArtwork: Image? {

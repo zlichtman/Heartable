@@ -35,6 +35,10 @@ final class HeartableScreenshots: XCTestCase {
         try capture("vinyl", arguments: ["-HeartableScreenshot", "vinyl", "-heartable_theme", "noir"], orientation: .landscapeLeft, settle: 9)
     }
 
+    func testFriendProfilePortrait() throws {
+        try capture("friend", arguments: ["-HeartableScreenshot", "friend", "-heartable_theme", "midnight"], orientation: .portrait, settle: 6)
+    }
+
     func testMixtapePortrait() throws {
         try capture("mixtape", arguments: ["-HeartableScreenshot", "mixtape", "-heartable_theme", "midnight"], orientation: .portrait, settle: 7)
     }

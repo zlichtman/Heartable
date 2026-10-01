@@ -236,7 +236,7 @@ struct FriendMixtapeEntryCard: View {
                     Text("Mixtape")
                         .font(Typography.semibold(16))
                         .foregroundStyle(theme.palette.text)
-                    Text("Songs, notes, photos — for \(friendName)")
+                    Text("Songs, notes, and photos for \(friendName)")
                         .font(Typography.body(12))
                         .foregroundStyle(theme.palette.textSecondary)
                         .multilineTextAlignment(.leading)

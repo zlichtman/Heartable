@@ -764,6 +764,27 @@ struct FriendProfileView: View {
     // MARK: - Load
 
     private func load() async {
+        #if DEBUG
+        if ScreenshotFixtures.requested == "friend", userId == ScreenshotFixtures.friendID {
+            let fixture = ScreenshotFixtures.friendProfile()
+            profile = fixture.profile
+            nowPlaying = fixture.nowPlaying
+            if let index = fixture.board.firstIndex(where: { $0.userId == userId }) {
+                standing = fixture.board[index]
+                rank = index + 1
+            }
+            let key = userId.uuidString.lowercased()
+            rotation = Array(fixture.songBoard
+                .filter { entry in entry.contributors.contains { ($0.userId ?? "").lowercased() == key } }
+                .prefix(6))
+            compatibility = FriendCompatibilityAvailability.evaluate(
+                entries: fixture.songBoard, viewerID: ScreenshotFixtures.viewerID, friendID: userId
+            )
+            friendship = .friends(UUID())
+            loading = false
+            return
+        }
+        #endif
         let api = BackendAPI.shared
         async let profileTask = api.getMyProfile(userID: userId)
         async let npTask = api.getFriendsNowPlaying()
