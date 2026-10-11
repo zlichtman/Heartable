@@ -1,0 +1,6 @@
+{
+  "images" : [
+    { "filename" : "ayu-mirage.png", "idiom" : "universal" }
+  ],
+  "info" : { "author" : "xcode", "version" : 1 }
+}

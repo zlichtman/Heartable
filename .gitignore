@@ -1,0 +1,38 @@
+# Secrets: real values live in Config/Secrets.xcconfig (see the .example file)
+Secrets.xcconfig
+.env*
+
+# Signing material
+secrets/
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+
+# Xcode and build output
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcresult
+*.ipa
+*.dSYM
+*.dSYM.zip
+.swiftpm/
+.build/
+
+# Supabase CLI
+supabase/.temp/
+
+# Editors and local tooling
+.DS_Store
+.vscode/
+.idea/
+.claude/
+
+# Full-resolution originals behind Demos/*.webp
+Demos/originals/
+
+# Heartable.xcodeproj and Package.resolved are committed on purpose: Xcode Cloud
+# builds the committed project. project.yml is the source of truth; run
+# `xcodegen generate` after changing it and commit the result.
